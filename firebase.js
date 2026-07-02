@@ -12,9 +12,7 @@ const APP_NAME = 'jee-pomodoro-flow';
 const CLOUD_COLLECTION = 'pwaState';
 const DEVICE_PROFILE_COLLECTION = 'deviceProfiles';
 const LEADERBOARD_COLLECTION = 'leaderboardUsers';
-const DEVICE_ID_KEY = 'jee_pomodoro_flow_v4_device_id';
-const CLOUD_DOC_ID_KEY = DEVICE_ID_KEY; // backward compatibility
-const LEADERBOARD_SCHEMA_VERSION = 2;
+const CLOUD_DOC_ID_KEY = 'jee_pomodoro_flow_v4_cloud_id';
 
 let firebasePromise = null;
 const firebaseStatus = {
@@ -34,24 +32,48 @@ function toErrorMessage(error) {
   return error && error.message ? error.message : String(error || 'Unknown Firebase error');
 }
 
-function getDeviceId() {
+function getCloudDocId() {
   try {
-    let id = localStorage.getItem(DEVICE_ID_KEY) || localStorage.getItem(CLOUD_DOC_ID_KEY);
+    let id = localStorage.getItem(CLOUD_DOC_ID_KEY);
     if (!id) {
       id = (window.crypto && window.crypto.randomUUID)
         ? window.crypto.randomUUID()
         : `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+      localStorage.setItem(CLOUD_DOC_ID_KEY, id);
     }
-    localStorage.setItem(DEVICE_ID_KEY, id);
-    localStorage.setItem(CLOUD_DOC_ID_KEY, id);
     return id;
   } catch {
     return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
   }
 }
 
-function getCloudDocId() {
-  return getDeviceId();
+// Turns a display name into a stable, name-based Firestore doc id, e.g.
+// "Sukirat Singh" -> "name-sukirat-singh". This is what lets the app find
+// the SAME cloud record again after a name is re-entered, even if this
+// device's local storage (and its old random id) was wiped.
+function slugifyName(name) {
+  return String(name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+}
+
+// Resolves the Firestore doc id for a person's synced state. Falls back to
+// the random per-device id only when no name is known yet (pre-onboarding).
+function resolveStateDocId(identityName) {
+  const slug = slugifyName(identityName);
+  return slug ? `name-${slug}` : getCloudDocId();
+}
+
+// Resolves the Firestore doc id for a leaderboard row. Always name-based —
+// a leaderboard row without a name makes no sense, so this returns null
+// rather than silently falling back to a random per-device id (which was
+// the cause of duplicate/orphaned leaderboard rows).
+function resolveNameDocId(name) {
+  const slug = slugifyName(name);
+  return slug ? `name-${slug}` : null;
 }
 
 async function loadFirebaseSdk() {
@@ -96,10 +118,10 @@ export function getCloudStatus() {
   return { ...firebaseStatus };
 }
 
-export async function pullCloudState() {
+export async function pullCloudState(identityName) {
   try {
     const { firestoreMod, db } = await loadFirebaseSdk();
-    const ref = firestoreMod.doc(db, CLOUD_COLLECTION, getCloudDocId());
+    const ref = firestoreMod.doc(db, CLOUD_COLLECTION, resolveStateDocId(identityName));
     const snap = await firestoreMod.getDoc(ref);
     if (!snap.exists()) return null;
     const data = snap.data() || {};
@@ -109,7 +131,6 @@ export async function pullCloudState() {
     return {
       state,
       updatedAt,
-      deviceId: String(data.deviceId || data.clientId || ''),
       clientId: String(data.clientId || ''),
     };
   } catch (error) {
@@ -122,8 +143,8 @@ export async function pullCloudState() {
 export async function pushCloudState(state, options = {}) {
   try {
     const { firestoreMod, db } = await loadFirebaseSdk();
-    const ref = firestoreMod.doc(db, CLOUD_COLLECTION, getCloudDocId());
-    const deviceId = String(options.deviceId || options.clientId || '');
+    const ref = firestoreMod.doc(db, CLOUD_COLLECTION, resolveStateDocId(options.identityName));
+    const clientId = String(options.clientId || '');
     const localUpdatedAt = Number(state && state.updatedAt) || Date.now();
     const snapshot = { ...(state || {}), updatedAt: localUpdatedAt };
 
@@ -131,26 +152,25 @@ export async function pushCloudState(state, options = {}) {
       const snap = await transaction.get(ref);
       const current = snap.exists() ? snap.data() : null;
       const remoteUpdatedAt = Number(current && (current.updatedAt || current.state?.updatedAt)) || 0;
-      const remoteDeviceId = String(current && (current.deviceId || current.clientId) || '');
+      const remoteClientId = String(current && current.clientId || '');
 
       if (remoteUpdatedAt > localUpdatedAt) {
         return {
           ok: false,
           stale: true,
           remoteUpdatedAt,
-          remoteDeviceId,
+          remoteClientId,
           remoteState: current && current.state ? current.state : null
         };
       }
 
-      if (remoteUpdatedAt === localUpdatedAt && remoteDeviceId && deviceId && remoteDeviceId === deviceId) {
+      if (remoteUpdatedAt === localUpdatedAt && remoteClientId && clientId && remoteClientId === clientId) {
         return { ok: true, duplicate: true, updatedAt: remoteUpdatedAt };
       }
 
       transaction.set(ref, {
         app: APP_NAME,
-        deviceId,
-        clientId: deviceId,
+        clientId,
         updatedAt: localUpdatedAt,
         state: snapshot
       }, { merge: false });
@@ -179,12 +199,12 @@ export async function pushCloudState(state, options = {}) {
 
 export async function pushLeaderboardStats(profile, stats, options = {}) {
   try {
+    const docId = resolveNameDocId(profile && profile.name);
+    if (!docId) return { ok: false, reason: 'missing-name' };
     const { firestoreMod, db } = await loadFirebaseSdk();
-    const ref = firestoreMod.doc(db, LEADERBOARD_COLLECTION, getCloudDocId());
+    const ref = firestoreMod.doc(db, LEADERBOARD_COLLECTION, docId);
     const payload = {
-      schemaVersion: LEADERBOARD_SCHEMA_VERSION,
-      deviceId: String(options.deviceId || options.clientId || ''),
-      clientId: String(options.deviceId || options.clientId || ''),
+      clientId: String(options.clientId || ''),
       name: String(profile && profile.name || 'Student').trim().slice(0, 40) || 'Student',
       totalMinutes: Math.max(0, Math.round(Number(stats && stats.totalMinutes) || 0)),
       totalQuestions: Math.max(0, Math.round(Number(stats && stats.totalQuestions) || 0)),
@@ -208,10 +228,8 @@ export async function pullLeaderboardStats(limit = 50) {
     const rows = [];
     snap.forEach((docSnap) => {
       const data = docSnap.data() || {};
-      if (Number(data.schemaVersion || 0) !== LEADERBOARD_SCHEMA_VERSION) return;
       rows.push({
-        deviceId: String(data.deviceId || data.clientId || docSnap.id || ''),
-        clientId: String(data.clientId || ''),
+        clientId: String(data.clientId || docSnap.id || ''),
         name: String(data.name || 'Student').trim() || 'Student',
         totalMinutes: Math.max(0, Math.round(Number(data.totalMinutes) || 0)),
         totalQuestions: Math.max(0, Math.round(Number(data.totalQuestions) || 0)),
@@ -242,7 +260,6 @@ export async function pullDeviceProfile() {
       name: String(data.name || '').trim().slice(0, 40),
       createdAt: Number(data.createdAt || 0) || 0,
       updatedAt: Number(data.updatedAt || 0) || 0,
-      deviceId: String(data.deviceId || data.clientId || ''),
       clientId: String(data.clientId || '')
     };
   } catch (error) {
@@ -257,8 +274,7 @@ export async function pushDeviceProfile(profile, options = {}) {
     const { firestoreMod, db } = await loadFirebaseSdk();
     const ref = firestoreMod.doc(db, DEVICE_PROFILE_COLLECTION, getCloudDocId());
     const payload = {
-      deviceId: String(options.deviceId || options.clientId || ''),
-      clientId: String(options.deviceId || options.clientId || ''),
+      clientId: String(options.clientId || ''),
       name: String(profile && profile.name || '').trim().slice(0, 40),
       createdAt: Number(profile && profile.createdAt || Date.now()) || Date.now(),
       updatedAt: Number(profile && profile.updatedAt || Date.now()) || Date.now(),

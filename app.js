@@ -2,13 +2,11 @@ const $ = (id) => document.getElementById(id);
 const CIRC = 515.22;
 const SUBJECTS = ['Physics', 'Chemistry', 'Maths'];
 const STORAGE_KEY = 'jee_pomodoro_flow_v4';
-const RECORDS_KEY = 'jee_pomodoro_flow_v4_records';
 const PROFILE_KEY = 'jee_pomodoro_flow_v4_profile';
 const DAY_MS = 86400000;
 const CLOUD_SYNC_ENABLED = true;
 const CLOUD_QUEUE_KEY = 'jee_pomodoro_flow_v4_cloud_queue';
-const DEVICE_ID_KEY = 'jee_pomodoro_flow_v4_device_id';
-const CLOUD_CLIENT_ID_KEY = DEVICE_ID_KEY; // backward compatibility
+const CLOUD_CLIENT_ID_KEY = 'jee_pomodoro_flow_v4_cloud_client_id';
 const CLOUD_SYNC_DEBOUNCE_MS = 2500;
 const CLOUD_SYNC_RETRY_BASE_MS = 2000;
 const CLOUD_SYNC_RETRY_MAX_MS = 60000;
@@ -123,7 +121,7 @@ let cloudSyncInFlight = false;
 let cloudSyncRequested = false;
 let cloudLastAppliedAt = 0;
 let cloudQueue = null;
-let deviceId = null;
+let cloudClientId = null;
 let leaderboardRows = [];
 let profileModalBusy = false;
 let profileHydrationStarted = false;
@@ -133,14 +131,8 @@ function loadState() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return cloneDefaultState();
     const parsed = JSON.parse(raw);
-    const storedRecords = loadStoredRecords();
-    const next = {
-      ...cloneDefaultState(),
-      ...parsed,
-      records: storedRecords !== null ? storedRecords : parsed.records
-    };
     cloudLastAppliedAt = Number(parsed.updatedAt || 0) || 0;
-    return normalizeState(next);
+    return normalizeState({ ...cloneDefaultState(), ...parsed });
   } catch {
     return cloneDefaultState();
   }
@@ -158,7 +150,7 @@ function loadProfile() {
 function saveState(options = {}) {
   try {
     state.updatedAt = Date.now();
-    persistLocalState();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     queueCloudSync(options);
     return true;
   } catch (error) {
@@ -183,45 +175,12 @@ function saveProfile(profile) {
     state.profile.updatedAt = Date.now();
     localStorage.setItem(PROFILE_KEY, JSON.stringify(state.profile));
     state.updatedAt = Date.now();
-    persistLocalState();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     queueCloudSync({ reason: 'profile-change', immediate: true });
     return true;
   } catch (error) {
     logCloud('error', 'Profile save failed.', error);
     showToast('Could not save your name.');
-    return false;
-  }
-}
-
-function loadStoredRecords() {
-  try {
-    const raw = localStorage.getItem(RECORDS_KEY);
-    if (raw == null) return null;
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function saveStoredRecords(records) {
-  try {
-    localStorage.setItem(RECORDS_KEY, JSON.stringify(Array.isArray(records) ? records : []));
-    return true;
-  } catch (error) {
-    logCloud('warn', 'Could not persist study records separately.', error);
-    return false;
-  }
-}
-
-function persistLocalState() {
-  try {
-    const { records, ...persistedState } = state;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(persistedState));
-    saveStoredRecords(records);
-    return true;
-  } catch (error) {
-    logCloud('error', 'Local state persistence failed.', error);
     return false;
   }
 }
@@ -247,16 +206,15 @@ function logCloud(level, message, details) {
   if (details !== undefined) console[level](prefix, message, details);
   else console[level](prefix, message);
 }
-function getDeviceId() {
+function getCloudClientId() {
   try {
-    let id = localStorage.getItem(DEVICE_ID_KEY) || localStorage.getItem(CLOUD_CLIENT_ID_KEY);
+    let id = localStorage.getItem(CLOUD_CLIENT_ID_KEY);
     if (!id) {
       id = (window.crypto && window.crypto.randomUUID)
         ? window.crypto.randomUUID()
         : `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+      localStorage.setItem(CLOUD_CLIENT_ID_KEY, id);
     }
-    localStorage.setItem(DEVICE_ID_KEY, id);
-    localStorage.setItem(CLOUD_CLIENT_ID_KEY, id);
     return id;
   } catch {
     return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -349,6 +307,46 @@ async function ensureCloudSync() {
   }
   return cloudSyncReady;
 }
+// Given a name, checks the cloud for any existing progress under that name
+// (and under this device's legacy anonymous id) and merges it into local
+// state. This must run BEFORE any push to the cloud whenever a name is
+// entered/restored, otherwise a fresh/empty local state gets pushed and
+// overwrites real history with zeros — which was the cause of "entering my
+// name resets my questions and hours to 0".
+async function claimCloudIdentity(name) {
+  const mod = await ensureCloudSync();
+  if (!mod || typeof mod.pullCloudState !== 'function') return { merged: false };
+
+  const sources = [];
+  try {
+    const byName = await mod.pullCloudState(name);
+    if (byName && byName.state) sources.push(byName.state);
+  } catch (error) {
+    logCloud('warn', 'Could not check existing cloud progress for this name.', error);
+  }
+  try {
+    const byDevice = await mod.pullCloudState();
+    if (byDevice && byDevice.state) sources.push(byDevice.state);
+  } catch (error) {
+    logCloud('warn', "Could not check this device's prior cloud progress.", error);
+  }
+  if (!sources.length) return { merged: false };
+
+  const localCount = getRecords().length;
+  let mergedRecords = getRecords();
+  sources.forEach(src => {
+    mergedRecords = mergeRecordsUnion(mergedRecords, Array.isArray(src.records) ? src.records : []);
+  });
+
+  const gained = mergedRecords.length > localCount;
+  if (gained) {
+    state.records = mergedRecords;
+    state.streak = computeCurrentStreak(mergedRecords);
+    state.achievements = sources.reduce((acc, src) => ({ ...acc, ...(src.achievements || {}) }), state.achievements || {});
+  }
+  return { merged: gained, mergedCount: mergedRecords.length, localCount };
+}
+
 async function hydrateProfileFromCloud() {
   if (profileHydrationStarted) return state.profile;
   profileHydrationStarted = true;
@@ -360,10 +358,11 @@ async function hydrateProfileFromCloud() {
   const normalizedRemote = normalizeProfile(remoteProfile);
   if (!normalizedRemote.name) return localProfile;
   state.profile = normalizedRemote;
+  await claimCloudIdentity(normalizedRemote.name);
   try {
     localStorage.setItem(PROFILE_KEY, JSON.stringify(state.profile));
-    persistLocalState();
   } catch {}
+  saveState({ immediate: true, reason: 'profile-hydrated' });
   if (els.profileName) els.profileName.textContent = normalizedRemote.name;
   if (els.profileModal) closeProfileModal(true);
   render({ skipSave: true });
@@ -373,7 +372,8 @@ async function pushCloudStateNow(reason = 'state-change') {
   const mod = await ensureCloudSync();
   if (!mod || typeof mod.pushCloudState !== 'function') return { ok: false, reason: 'firebase-unavailable' };
   const snapshot = cloudQueue && cloudQueue.state ? cloudQueue.state : getCloudSafeState();
-  const result = await mod.pushCloudState(snapshot, { deviceId, reason });
+  const identityName = normalizeProfile(state.profile || loadProfile()).name || '';
+  const result = await mod.pushCloudState(snapshot, { clientId: cloudClientId, reason, identityName });
   if (result && result.ok) {
     cloudLastAppliedAt = Number(snapshot.updatedAt || Date.now()) || Date.now();
   }
@@ -393,7 +393,7 @@ async function syncLeaderboardNow(reason = 'state-change') {
   if (!profile.name) return false;
   const stats = getStudyTotals();
   const result = await mod.pushLeaderboardStats(profile, stats, {
-    deviceId,
+    clientId: cloudClientId,
     updatedAt: state.updatedAt || Date.now(),
     reason
   });
@@ -412,35 +412,17 @@ async function refreshLeaderboard(options = {}) {
     return leaderboardRows;
   }
 }
-
 function applyCloudSnapshot(remoteState, remoteUpdatedAt, source = 'remote') {
   if (!remoteState || typeof remoteState !== 'object') return false;
   const currentUpdatedAt = Number(state.updatedAt || 0) || 0;
   const nextUpdatedAt = Number(remoteUpdatedAt || remoteState.updatedAt || 0) || 0;
   if (nextUpdatedAt <= currentUpdatedAt) return false;
-
-  const localProfile = normalizeProfile(state.profile || loadProfile());
-  const localRecords = Array.isArray(getRecords()) ? getRecords().map(record => ({ ...record })) : [];
-  const nextState = normalizeState({ ...cloneDefaultState(), ...remoteState });
-
-  // Preserve a real local profile if the cloud snapshot is an older/legacy payload
-  // that does not include a usable name yet.
-  const remoteProfile = normalizeProfile(remoteState.profile || null);
-  if (localProfile.name && !remoteProfile.name) {
-    nextState.profile = localProfile;
-  }
-
-  // Keep local records only when the remote snapshot has none. This avoids a
-  // stale or partial cloud write from wiping study history after a refresh.
-  if (localRecords.length && (!Array.isArray(remoteState.records) || remoteState.records.length === 0)) {
-    nextState.records = localRecords.map(normalizeRecord).filter(Boolean);
-  }
-
-  state = nextState;
+  const mergedRecords = mergeRecordsUnion(getRecords(), Array.isArray(remoteState.records) ? remoteState.records : []);
+  state = normalizeState({ ...cloneDefaultState(), ...remoteState, records: mergedRecords });
   state.updatedAt = nextUpdatedAt;
   cloudLastAppliedAt = nextUpdatedAt;
   try {
-    persistLocalState();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (error) {
     logCloud('error', `Failed to persist remote ${source} state locally.`, error);
   }
@@ -449,12 +431,12 @@ function applyCloudSnapshot(remoteState, remoteUpdatedAt, source = 'remote') {
   }
   return true;
 }
-
 async function pullCloudStateIfNewer(options = {}) {
   const mod = await ensureCloudSync();
   if (!mod || typeof mod.pullCloudState !== 'function') return false;
   if (!options.force && navigator.onLine === false) return false;
-  const remote = await mod.pullCloudState();
+  const identityName = normalizeProfile(state.profile || loadProfile()).name || '';
+  const remote = await mod.pullCloudState(identityName);
   if (!remote || !remote.state) return false;
   const remoteUpdatedAt = Number(remote.updatedAt || remote.state.updatedAt || 0) || 0;
   const localUpdatedAt = Number(state.updatedAt || 0) || 0;
@@ -644,6 +626,21 @@ function normalizeRecord(record) {
     minutes,
     mode: record.mode === 'focus' ? 'focus' : 'focus'
   };
+}
+
+// Combines two record lists without losing data from either side. Used any
+// time local state and cloud state need to be reconciled, so a sync never
+// silently replaces real progress with an empty/zero snapshot.
+function mergeRecordsUnion(localRecords, remoteRecords) {
+  const seen = new Map();
+  [...(Array.isArray(localRecords) ? localRecords : []), ...(Array.isArray(remoteRecords) ? remoteRecords : [])]
+    .forEach(raw => {
+      const record = normalizeRecord(raw);
+      if (record && !seen.has(record.id)) seen.set(record.id, record);
+    });
+  return Array.from(seen.values())
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, 1000);
 }
 
 function normalizeState(nextState) {
@@ -1502,14 +1499,19 @@ async function saveProfileFromInput() {
     if (!ok) return;
     if (els.profileName) els.profileName.textContent = name;
     closeProfileModal(true);
+    render({ skipSave: true });
+
+    const { merged, mergedCount } = await claimCloudIdentity(name);
+    saveState({ immediate: true, reason: merged ? 'progress-restored' : 'profile-claimed' });
     render();
+
     const mod = await ensureCloudSync();
     if (mod && typeof mod.pushDeviceProfile === 'function') {
-      await mod.pushDeviceProfile(state.profile, { deviceId });
+      await mod.pushDeviceProfile(state.profile, { clientId: cloudClientId });
     }
     await syncLeaderboardNow('profile');
     await refreshLeaderboard({ force: true });
-    showToast(`Welcome, ${name}`);
+    showToast(merged ? `Welcome back, ${name} — restored ${mergedCount} sessions` : `Welcome, ${name}`);
   } finally {
     profileModalBusy = false;
     els.profileSaveBtn.disabled = false;
@@ -1572,7 +1574,7 @@ function sanitizeNumbers() {
   state.roundsBeforeLong = Math.max(2, Math.min(8, Number(state.roundsBeforeLong) || 4));
 }
 
-deviceId = getDeviceId();
+cloudClientId = getCloudClientId();
 cloudQueue = loadCloudQueue();
 
 function init() {
