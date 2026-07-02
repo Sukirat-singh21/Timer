@@ -12,7 +12,9 @@ const APP_NAME = 'jee-pomodoro-flow';
 const CLOUD_COLLECTION = 'pwaState';
 const DEVICE_PROFILE_COLLECTION = 'deviceProfiles';
 const LEADERBOARD_COLLECTION = 'leaderboardUsers';
-const CLOUD_DOC_ID_KEY = 'jee_pomodoro_flow_v4_cloud_id';
+const DEVICE_ID_KEY = 'jee_pomodoro_flow_v4_device_id';
+const CLOUD_DOC_ID_KEY = DEVICE_ID_KEY; // backward compatibility
+const LEADERBOARD_SCHEMA_VERSION = 2;
 
 let firebasePromise = null;
 const firebaseStatus = {
@@ -32,19 +34,24 @@ function toErrorMessage(error) {
   return error && error.message ? error.message : String(error || 'Unknown Firebase error');
 }
 
-function getCloudDocId() {
+function getDeviceId() {
   try {
-    let id = localStorage.getItem(CLOUD_DOC_ID_KEY);
+    let id = localStorage.getItem(DEVICE_ID_KEY) || localStorage.getItem(CLOUD_DOC_ID_KEY);
     if (!id) {
       id = (window.crypto && window.crypto.randomUUID)
         ? window.crypto.randomUUID()
         : `${Date.now()}_${Math.random().toString(16).slice(2)}`;
-      localStorage.setItem(CLOUD_DOC_ID_KEY, id);
     }
+    localStorage.setItem(DEVICE_ID_KEY, id);
+    localStorage.setItem(CLOUD_DOC_ID_KEY, id);
     return id;
   } catch {
     return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
   }
+}
+
+function getCloudDocId() {
+  return getDeviceId();
 }
 
 async function loadFirebaseSdk() {
@@ -102,6 +109,7 @@ export async function pullCloudState() {
     return {
       state,
       updatedAt,
+      deviceId: String(data.deviceId || data.clientId || ''),
       clientId: String(data.clientId || ''),
     };
   } catch (error) {
@@ -115,7 +123,7 @@ export async function pushCloudState(state, options = {}) {
   try {
     const { firestoreMod, db } = await loadFirebaseSdk();
     const ref = firestoreMod.doc(db, CLOUD_COLLECTION, getCloudDocId());
-    const clientId = String(options.clientId || '');
+    const deviceId = String(options.deviceId || options.clientId || '');
     const localUpdatedAt = Number(state && state.updatedAt) || Date.now();
     const snapshot = { ...(state || {}), updatedAt: localUpdatedAt };
 
@@ -123,25 +131,26 @@ export async function pushCloudState(state, options = {}) {
       const snap = await transaction.get(ref);
       const current = snap.exists() ? snap.data() : null;
       const remoteUpdatedAt = Number(current && (current.updatedAt || current.state?.updatedAt)) || 0;
-      const remoteClientId = String(current && current.clientId || '');
+      const remoteDeviceId = String(current && (current.deviceId || current.clientId) || '');
 
       if (remoteUpdatedAt > localUpdatedAt) {
         return {
           ok: false,
           stale: true,
           remoteUpdatedAt,
-          remoteClientId,
+          remoteDeviceId,
           remoteState: current && current.state ? current.state : null
         };
       }
 
-      if (remoteUpdatedAt === localUpdatedAt && remoteClientId && clientId && remoteClientId === clientId) {
+      if (remoteUpdatedAt === localUpdatedAt && remoteDeviceId && deviceId && remoteDeviceId === deviceId) {
         return { ok: true, duplicate: true, updatedAt: remoteUpdatedAt };
       }
 
       transaction.set(ref, {
         app: APP_NAME,
-        clientId,
+        deviceId,
+        clientId: deviceId,
         updatedAt: localUpdatedAt,
         state: snapshot
       }, { merge: false });
@@ -173,7 +182,9 @@ export async function pushLeaderboardStats(profile, stats, options = {}) {
     const { firestoreMod, db } = await loadFirebaseSdk();
     const ref = firestoreMod.doc(db, LEADERBOARD_COLLECTION, getCloudDocId());
     const payload = {
-      clientId: String(options.clientId || ''),
+      schemaVersion: LEADERBOARD_SCHEMA_VERSION,
+      deviceId: String(options.deviceId || options.clientId || ''),
+      clientId: String(options.deviceId || options.clientId || ''),
       name: String(profile && profile.name || 'Student').trim().slice(0, 40) || 'Student',
       totalMinutes: Math.max(0, Math.round(Number(stats && stats.totalMinutes) || 0)),
       totalQuestions: Math.max(0, Math.round(Number(stats && stats.totalQuestions) || 0)),
@@ -197,8 +208,10 @@ export async function pullLeaderboardStats(limit = 50) {
     const rows = [];
     snap.forEach((docSnap) => {
       const data = docSnap.data() || {};
+      if (Number(data.schemaVersion || 0) !== LEADERBOARD_SCHEMA_VERSION) return;
       rows.push({
-        clientId: String(data.clientId || docSnap.id || ''),
+        deviceId: String(data.deviceId || data.clientId || docSnap.id || ''),
+        clientId: String(data.clientId || ''),
         name: String(data.name || 'Student').trim() || 'Student',
         totalMinutes: Math.max(0, Math.round(Number(data.totalMinutes) || 0)),
         totalQuestions: Math.max(0, Math.round(Number(data.totalQuestions) || 0)),
@@ -229,6 +242,7 @@ export async function pullDeviceProfile() {
       name: String(data.name || '').trim().slice(0, 40),
       createdAt: Number(data.createdAt || 0) || 0,
       updatedAt: Number(data.updatedAt || 0) || 0,
+      deviceId: String(data.deviceId || data.clientId || ''),
       clientId: String(data.clientId || '')
     };
   } catch (error) {
@@ -243,7 +257,8 @@ export async function pushDeviceProfile(profile, options = {}) {
     const { firestoreMod, db } = await loadFirebaseSdk();
     const ref = firestoreMod.doc(db, DEVICE_PROFILE_COLLECTION, getCloudDocId());
     const payload = {
-      clientId: String(options.clientId || ''),
+      deviceId: String(options.deviceId || options.clientId || ''),
+      clientId: String(options.deviceId || options.clientId || ''),
       name: String(profile && profile.name || '').trim().slice(0, 40),
       createdAt: Number(profile && profile.createdAt || Date.now()) || Date.now(),
       updatedAt: Number(profile && profile.updatedAt || Date.now()) || Date.now(),

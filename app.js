@@ -2,11 +2,13 @@ const $ = (id) => document.getElementById(id);
 const CIRC = 515.22;
 const SUBJECTS = ['Physics', 'Chemistry', 'Maths'];
 const STORAGE_KEY = 'jee_pomodoro_flow_v4';
+const RECORDS_KEY = 'jee_pomodoro_flow_v4_records';
 const PROFILE_KEY = 'jee_pomodoro_flow_v4_profile';
 const DAY_MS = 86400000;
 const CLOUD_SYNC_ENABLED = true;
 const CLOUD_QUEUE_KEY = 'jee_pomodoro_flow_v4_cloud_queue';
-const CLOUD_CLIENT_ID_KEY = 'jee_pomodoro_flow_v4_cloud_client_id';
+const DEVICE_ID_KEY = 'jee_pomodoro_flow_v4_device_id';
+const CLOUD_CLIENT_ID_KEY = DEVICE_ID_KEY; // backward compatibility
 const CLOUD_SYNC_DEBOUNCE_MS = 2500;
 const CLOUD_SYNC_RETRY_BASE_MS = 2000;
 const CLOUD_SYNC_RETRY_MAX_MS = 60000;
@@ -121,7 +123,7 @@ let cloudSyncInFlight = false;
 let cloudSyncRequested = false;
 let cloudLastAppliedAt = 0;
 let cloudQueue = null;
-let cloudClientId = null;
+let deviceId = null;
 let leaderboardRows = [];
 let profileModalBusy = false;
 let profileHydrationStarted = false;
@@ -131,8 +133,14 @@ function loadState() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return cloneDefaultState();
     const parsed = JSON.parse(raw);
+    const storedRecords = loadStoredRecords();
+    const next = {
+      ...cloneDefaultState(),
+      ...parsed,
+      records: storedRecords !== null ? storedRecords : parsed.records
+    };
     cloudLastAppliedAt = Number(parsed.updatedAt || 0) || 0;
-    return normalizeState({ ...cloneDefaultState(), ...parsed });
+    return normalizeState(next);
   } catch {
     return cloneDefaultState();
   }
@@ -150,7 +158,7 @@ function loadProfile() {
 function saveState(options = {}) {
   try {
     state.updatedAt = Date.now();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    persistLocalState();
     queueCloudSync(options);
     return true;
   } catch (error) {
@@ -175,12 +183,45 @@ function saveProfile(profile) {
     state.profile.updatedAt = Date.now();
     localStorage.setItem(PROFILE_KEY, JSON.stringify(state.profile));
     state.updatedAt = Date.now();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    persistLocalState();
     queueCloudSync({ reason: 'profile-change', immediate: true });
     return true;
   } catch (error) {
     logCloud('error', 'Profile save failed.', error);
     showToast('Could not save your name.');
+    return false;
+  }
+}
+
+function loadStoredRecords() {
+  try {
+    const raw = localStorage.getItem(RECORDS_KEY);
+    if (raw == null) return null;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveStoredRecords(records) {
+  try {
+    localStorage.setItem(RECORDS_KEY, JSON.stringify(Array.isArray(records) ? records : []));
+    return true;
+  } catch (error) {
+    logCloud('warn', 'Could not persist study records separately.', error);
+    return false;
+  }
+}
+
+function persistLocalState() {
+  try {
+    const { records, ...persistedState } = state;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(persistedState));
+    saveStoredRecords(records);
+    return true;
+  } catch (error) {
+    logCloud('error', 'Local state persistence failed.', error);
     return false;
   }
 }
@@ -206,15 +247,16 @@ function logCloud(level, message, details) {
   if (details !== undefined) console[level](prefix, message, details);
   else console[level](prefix, message);
 }
-function getCloudClientId() {
+function getDeviceId() {
   try {
-    let id = localStorage.getItem(CLOUD_CLIENT_ID_KEY);
+    let id = localStorage.getItem(DEVICE_ID_KEY) || localStorage.getItem(CLOUD_CLIENT_ID_KEY);
     if (!id) {
       id = (window.crypto && window.crypto.randomUUID)
         ? window.crypto.randomUUID()
         : `${Date.now()}_${Math.random().toString(16).slice(2)}`;
-      localStorage.setItem(CLOUD_CLIENT_ID_KEY, id);
     }
+    localStorage.setItem(DEVICE_ID_KEY, id);
+    localStorage.setItem(CLOUD_CLIENT_ID_KEY, id);
     return id;
   } catch {
     return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -320,7 +362,7 @@ async function hydrateProfileFromCloud() {
   state.profile = normalizedRemote;
   try {
     localStorage.setItem(PROFILE_KEY, JSON.stringify(state.profile));
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, updatedAt: Date.now() }));
+    persistLocalState();
   } catch {}
   if (els.profileName) els.profileName.textContent = normalizedRemote.name;
   if (els.profileModal) closeProfileModal(true);
@@ -331,7 +373,7 @@ async function pushCloudStateNow(reason = 'state-change') {
   const mod = await ensureCloudSync();
   if (!mod || typeof mod.pushCloudState !== 'function') return { ok: false, reason: 'firebase-unavailable' };
   const snapshot = cloudQueue && cloudQueue.state ? cloudQueue.state : getCloudSafeState();
-  const result = await mod.pushCloudState(snapshot, { clientId: cloudClientId, reason });
+  const result = await mod.pushCloudState(snapshot, { deviceId, reason });
   if (result && result.ok) {
     cloudLastAppliedAt = Number(snapshot.updatedAt || Date.now()) || Date.now();
   }
@@ -351,7 +393,7 @@ async function syncLeaderboardNow(reason = 'state-change') {
   if (!profile.name) return false;
   const stats = getStudyTotals();
   const result = await mod.pushLeaderboardStats(profile, stats, {
-    clientId: cloudClientId,
+    deviceId,
     updatedAt: state.updatedAt || Date.now(),
     reason
   });
@@ -370,16 +412,35 @@ async function refreshLeaderboard(options = {}) {
     return leaderboardRows;
   }
 }
+
 function applyCloudSnapshot(remoteState, remoteUpdatedAt, source = 'remote') {
   if (!remoteState || typeof remoteState !== 'object') return false;
   const currentUpdatedAt = Number(state.updatedAt || 0) || 0;
   const nextUpdatedAt = Number(remoteUpdatedAt || remoteState.updatedAt || 0) || 0;
   if (nextUpdatedAt <= currentUpdatedAt) return false;
-  state = normalizeState({ ...cloneDefaultState(), ...remoteState });
+
+  const localProfile = normalizeProfile(state.profile || loadProfile());
+  const localRecords = Array.isArray(getRecords()) ? getRecords().map(record => ({ ...record })) : [];
+  const nextState = normalizeState({ ...cloneDefaultState(), ...remoteState });
+
+  // Preserve a real local profile if the cloud snapshot is an older/legacy payload
+  // that does not include a usable name yet.
+  const remoteProfile = normalizeProfile(remoteState.profile || null);
+  if (localProfile.name && !remoteProfile.name) {
+    nextState.profile = localProfile;
+  }
+
+  // Keep local records only when the remote snapshot has none. This avoids a
+  // stale or partial cloud write from wiping study history after a refresh.
+  if (localRecords.length && (!Array.isArray(remoteState.records) || remoteState.records.length === 0)) {
+    nextState.records = localRecords.map(normalizeRecord).filter(Boolean);
+  }
+
+  state = nextState;
   state.updatedAt = nextUpdatedAt;
   cloudLastAppliedAt = nextUpdatedAt;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    persistLocalState();
   } catch (error) {
     logCloud('error', `Failed to persist remote ${source} state locally.`, error);
   }
@@ -388,6 +449,7 @@ function applyCloudSnapshot(remoteState, remoteUpdatedAt, source = 'remote') {
   }
   return true;
 }
+
 async function pullCloudStateIfNewer(options = {}) {
   const mod = await ensureCloudSync();
   if (!mod || typeof mod.pullCloudState !== 'function') return false;
@@ -1443,7 +1505,7 @@ async function saveProfileFromInput() {
     render();
     const mod = await ensureCloudSync();
     if (mod && typeof mod.pushDeviceProfile === 'function') {
-      await mod.pushDeviceProfile(state.profile, { clientId: cloudClientId });
+      await mod.pushDeviceProfile(state.profile, { deviceId });
     }
     await syncLeaderboardNow('profile');
     await refreshLeaderboard({ force: true });
@@ -1510,7 +1572,7 @@ function sanitizeNumbers() {
   state.roundsBeforeLong = Math.max(2, Math.min(8, Number(state.roundsBeforeLong) || 4));
 }
 
-cloudClientId = getCloudClientId();
+deviceId = getDeviceId();
 cloudQueue = loadCloudQueue();
 
 function init() {
