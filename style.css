@@ -26,6 +26,8 @@ body{
 }
 button,input{font:inherit}
 button{cursor:pointer;touch-action:manipulation}
+button:disabled{opacity:.55;cursor:not-allowed}
+button:focus-visible,input:focus-visible,[role="button"]:focus-visible{outline:2px solid rgba(34,197,94,.8);outline-offset:3px}
 .hidden{display:none !important}
 .app-shell{max-width:1180px;margin:0 auto;padding:14px;min-height:100vh;display:grid;grid-template-rows:auto 1fr;gap:14px}
 .topbar{
@@ -36,6 +38,19 @@ button{cursor:pointer;touch-action:manipulation}
 .brand{display:grid;gap:2px;flex:1}
 .brand-title{font-size:1.08rem;font-weight:900;letter-spacing:-.03em}
 .brand-subtitle{color:var(--muted);font-size:.88rem}
+.profile-pill{
+  max-width:180px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  padding:10px 12px;
+  border-radius:999px;
+  background:rgba(34,197,94,.10);
+  border:1px solid rgba(34,197,94,.20);
+  color:#bbf7d0;
+  font-size:.88rem;
+  font-weight:900
+}
 .icon-btn,.ghost-btn,.primary,.soft,.success,.danger,.drawer-item,.chip,.tab,.small-btn{
   border:0;border-radius:16px;padding:12px 14px;color:var(--text);font-weight:800;transition:transform .15s ease,background .15s ease,filter .15s ease;
 }
@@ -117,8 +132,28 @@ button{cursor:pointer;touch-action:manipulation}
 .detail-split .mini-line{background:rgba(148,163,184,.06);border:1px solid rgba(148,163,184,.10);border-radius:14px;padding:10px 12px;display:flex;justify-content:space-between;gap:10px}
 .detail-split .mini-line span{color:var(--muted);font-size:.86rem;font-weight:800}
 .detail-split .mini-line strong{font-size:.95rem}
+.analytics-session-card{width:min(100%,460px)}
+.analytics-session-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;
+  margin-top:14px
+}
+.analytics-session-grid .mini-line{
+  background:rgba(148,163,184,.06);
+  border:1px solid rgba(148,163,184,.10);
+  border-radius:14px;
+  padding:12px 12px;
+  display:flex;
+  justify-content:space-between;
+  gap:10px
+}
+.analytics-session-grid .mini-line span{color:var(--muted);font-size:.84rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em}
+.analytics-session-grid .mini-line strong{font-size:1rem}
+.analytics-subject-questions{margin-top:12px}
+.soft.danger{background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.28);color:#fecaca}
 .analytics-chart{
-  display:grid;grid-template-columns:62px minmax(0,1fr);gap:12px;align-items:stretch
+  width:100%;display:grid;grid-template-columns:62px minmax(0,1fr);gap:12px;align-items:stretch
 }
 .chart-axis{
   min-height:250px;display:flex;flex-direction:column;justify-content:space-between;
@@ -143,22 +178,23 @@ button{cursor:pointer;touch-action:manipulation}
 .chart-bars .day-col{flex:1;min-width:64px}
 .chart-bars .bar-wrap{height:190px}
 .bar.selected{outline:2px solid rgba(124,58,237,.8);box-shadow:0 0 0 4px rgba(124,58,237,.15)}
-.chart-bars .bar:hover{filter:brightness(1.06)}
+.chart-bars .day-col:hover .bar{filter:brightness(1.06)}
 .chart-bars .bar{padding:0;border:1px solid rgba(148,163,184,.12);transition:transform .14s ease, filter .14s ease, box-shadow .14s ease}
-.chart-bars .bar:active{transform:translateY(1px) scale(.995)}
+.chart-bars .day-col:active .bar{transform:translateY(1px) scale(.995)}
 .day-col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:8px;cursor:pointer}
 .bar-wrap{width:100%;height:190px;display:flex;align-items:flex-end;justify-content:center;position:relative}
 .bar{
   width:100%;max-width:52px;min-width:20px;border-radius:16px 16px 10px 10px;overflow:hidden;position:relative;
   background:rgba(148,163,184,.10);border:1px solid rgba(148,163,184,.12);display:flex;flex-direction:column-reverse;justify-content:flex-start;
-  cursor:pointer;
+  cursor:pointer;transform-origin:bottom;animation:barGrow .45s cubic-bezier(.2,.8,.2,1) both;
 }
+.bar.empty{height:2px !important;background:rgba(148,163,184,.20)}
 .segment{width:100%;border-radius:0}
 .segment.phy{background:var(--phy)}
 .segment.chem{background:var(--chem)}
 .segment.math{background:var(--math)}
 .bar-total{
-  position:absolute;top:-24px;left:50%;transform:translateX(-50%);font-size:.8rem;color:#dce7fb;font-weight:900;white-space:nowrap
+  display:none
 }
 .day-name{font-size:.84rem;color:var(--muted);font-weight:800}
 .day-qs{font-size:.78rem;color:#cdd8ee}
@@ -221,7 +257,9 @@ button{cursor:pointer;touch-action:manipulation}
 @media (max-width: 520px){
   .app-shell{padding:10px}
   .hero{padding:16px}
+  .profile-pill{order:3;max-width:100%;flex:1;text-align:center}
   .controls{grid-template-columns:1fr 1fr}
   .graph-wrap{min-height:250px}
   .bar-wrap{height:160px}
 }
+@keyframes barGrow{from{transform:scaleY(.02)}to{transform:scaleY(1)}}
