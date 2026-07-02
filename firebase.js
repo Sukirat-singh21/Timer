@@ -10,6 +10,7 @@ const firebaseConfig = {
 
 const APP_NAME = 'jee-pomodoro-flow';
 const CLOUD_COLLECTION = 'pwaState';
+const DEVICE_PROFILE_COLLECTION = 'deviceProfiles';
 const LEADERBOARD_COLLECTION = 'leaderboardUsers';
 const CLOUD_DOC_ID_KEY = 'jee_pomodoro_flow_v4_cloud_id';
 
@@ -214,5 +215,45 @@ export async function pullLeaderboardStats(limit = 50) {
     firebaseStatus.lastError = toErrorMessage(error);
     logCloud('error', 'Leaderboard read failed.', error);
     return [];
+  }
+}
+
+export async function pullDeviceProfile() {
+  try {
+    const { firestoreMod, db } = await loadFirebaseSdk();
+    const ref = firestoreMod.doc(db, DEVICE_PROFILE_COLLECTION, getCloudDocId());
+    const snap = await firestoreMod.getDoc(ref);
+    if (!snap.exists()) return null;
+    const data = snap.data() || {};
+    return {
+      name: String(data.name || '').trim().slice(0, 40),
+      createdAt: Number(data.createdAt || 0) || 0,
+      updatedAt: Number(data.updatedAt || 0) || 0,
+      clientId: String(data.clientId || '')
+    };
+  } catch (error) {
+    firebaseStatus.lastError = toErrorMessage(error);
+    logCloud('error', 'Device profile read failed.', error);
+    return null;
+  }
+}
+
+export async function pushDeviceProfile(profile, options = {}) {
+  try {
+    const { firestoreMod, db } = await loadFirebaseSdk();
+    const ref = firestoreMod.doc(db, DEVICE_PROFILE_COLLECTION, getCloudDocId());
+    const payload = {
+      clientId: String(options.clientId || ''),
+      name: String(profile && profile.name || '').trim().slice(0, 40),
+      createdAt: Number(profile && profile.createdAt || Date.now()) || Date.now(),
+      updatedAt: Number(profile && profile.updatedAt || Date.now()) || Date.now(),
+      app: APP_NAME
+    };
+    await firestoreMod.setDoc(ref, payload, { merge: false });
+    return { ok: true, payload };
+  } catch (error) {
+    firebaseStatus.lastError = toErrorMessage(error);
+    logCloud('error', 'Device profile write failed.', error);
+    return { ok: false, error: toErrorMessage(error) };
   }
 }

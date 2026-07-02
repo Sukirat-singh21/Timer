@@ -124,6 +124,7 @@ let cloudQueue = null;
 let cloudClientId = null;
 let leaderboardRows = [];
 let profileModalBusy = false;
+let profileHydrationStarted = false;
 
 function loadState() {
   try {
@@ -305,6 +306,26 @@ async function ensureCloudSync() {
     });
   }
   return cloudSyncReady;
+}
+async function hydrateProfileFromCloud() {
+  if (profileHydrationStarted) return state.profile;
+  profileHydrationStarted = true;
+  const localProfile = normalizeProfile(state.profile || loadProfile());
+  if (localProfile.name) return localProfile;
+  const mod = await ensureCloudSync();
+  if (!mod || typeof mod.pullDeviceProfile !== 'function') return localProfile;
+  const remoteProfile = await mod.pullDeviceProfile();
+  const normalizedRemote = normalizeProfile(remoteProfile);
+  if (!normalizedRemote.name) return localProfile;
+  state.profile = normalizedRemote;
+  try {
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(state.profile));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, updatedAt: Date.now() }));
+  } catch {}
+  if (els.profileName) els.profileName.textContent = normalizedRemote.name;
+  if (els.profileModal) closeProfileModal(true);
+  render({ skipSave: true });
+  return normalizedRemote;
 }
 async function pushCloudStateNow(reason = 'state-change') {
   const mod = await ensureCloudSync();
@@ -1394,8 +1415,16 @@ function ensureProfile() {
   const profile = normalizeProfile(state.profile || loadProfile());
   state.profile = profile;
   if (els.profileName) els.profileName.textContent = profile.name || 'Guest';
-  if (!profile.name) openProfileModal();
+  if (!profile.name) {
+    void hydrateProfileFromCloud().then((hydrated) => {
+      if (normalizedProfileHasName(hydrated)) return;
+      openProfileModal();
+    });
+  }
   return profile;
+}
+function normalizedProfileHasName(profile) {
+  return Boolean(normalizeProfile(profile).name);
 }
 async function saveProfileFromInput() {
   if (profileModalBusy) return;
@@ -1412,6 +1441,10 @@ async function saveProfileFromInput() {
     if (els.profileName) els.profileName.textContent = name;
     closeProfileModal(true);
     render();
+    const mod = await ensureCloudSync();
+    if (mod && typeof mod.pushDeviceProfile === 'function') {
+      await mod.pushDeviceProfile(state.profile, { clientId: cloudClientId });
+    }
     await syncLeaderboardNow('profile');
     await refreshLeaderboard({ force: true });
     showToast(`Welcome, ${name}`);
@@ -1520,6 +1553,8 @@ function init() {
   void refreshLeaderboard({ force: true });
   if (state.profile.name) {
     void syncLeaderboardNow('startup');
+  } else {
+    void hydrateProfileFromCloud();
   }
 
   setInterval(() => {
