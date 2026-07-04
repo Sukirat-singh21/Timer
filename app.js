@@ -149,14 +149,9 @@ function loadProfile() {
 }
 function saveState(options = {}) {
   try {
-    const touchUpdatedAt = options.touchUpdatedAt !== false;
-    if (touchUpdatedAt) {
-      state.updatedAt = Date.now();
-    }
+    state.updatedAt = Date.now();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    if (!options.skipCloudSync) {
-      queueCloudSync(options);
-    }
+    queueCloudSync(options);
     return true;
   } catch (error) {
     logCloud('error', 'Local storage save failed.', error);
@@ -173,7 +168,7 @@ function normalizeProfile(profile) {
     updatedAt: Number(profile.updatedAt || 0) || 0
   };
 }
-function saveProfile(profile, options = {}) {
+function saveProfile(profile) {
   try {
     state.profile = normalizeProfile(profile);
     if (!state.profile.createdAt) state.profile.createdAt = Date.now();
@@ -181,9 +176,7 @@ function saveProfile(profile, options = {}) {
     localStorage.setItem(PROFILE_KEY, JSON.stringify(state.profile));
     state.updatedAt = Date.now();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    if (!options.skipCloudSync) {
-      queueCloudSync({ reason: 'profile-change', immediate: true });
-    }
+    queueCloudSync({ reason: 'profile-change', immediate: true });
     return true;
   } catch (error) {
     logCloud('error', 'Profile save failed.', error);
@@ -543,10 +536,11 @@ async function flushCloudSync(options = {}) {
 }
 async function reconcileCloudState(options = {}) {
   if (!CLOUD_SYNC_ENABLED) return false;
-  let changed = Boolean(await pullCloudStateIfNewer({ force: true, reason: options.reason || 'reconcile' }));
+  let changed = false;
   if (cloudQueue && cloudQueue.state) {
     changed = Boolean(await flushCloudSync({ force: Boolean(options.force || navigator.onLine !== false), reason: options.reason || 'reconcile' })) || changed;
   }
+  changed = Boolean(await pullCloudStateIfNewer({ force: true, reason: options.reason || 'reconcile' })) || changed;
   return changed;
 }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
@@ -943,6 +937,10 @@ function render(options = {}) {
     ? `Round ${state.cycleCount} of ${state.roundsBeforeLong}`
     : modeName(state.currentMode);
   els.startPauseBtn.textContent = running ? 'Pause' : 'Start';
+  const logAllowed = Boolean(state.pendingSession || state.currentMode === 'focus');
+  els.logBtn.disabled = !logAllowed;
+  els.logBtn.style.opacity = logAllowed ? '' : '0.38';
+  els.logBtn.title = logAllowed ? '' : 'Log Session is only available during a focus round';
   els.statusPill.textContent = running ? 'Locked in' : (
     state.pendingSession ? 'Log session' :
     (state.currentMode !== 'focus' && state.remaining === state.total ? 'Break ready' :
@@ -957,7 +955,7 @@ function render(options = {}) {
   renderTimerOnly();
   if (state.page === 'analytics') renderAnalytics();
   else renderAchievements();
-  if (!options.skipSave) saveState({ skipCloudSync: true, touchUpdatedAt: false, reason: 'render' });
+  if (!options.skipSave) saveState();
 }
 function requestWakeLock() {
   return (async () => {
@@ -1501,20 +1499,15 @@ async function saveProfileFromInput() {
       showToast('Enter a name to continue');
       return;
     }
-
-    const { merged, mergedCount } = await claimCloudIdentity(name);
-    const ok = saveProfile(
-      { name, createdAt: state.profile?.createdAt || Date.now(), updatedAt: Date.now() },
-      { skipCloudSync: true }
-    );
+    const ok = saveProfile({ name, createdAt: state.profile?.createdAt || Date.now(), updatedAt: Date.now() });
     if (!ok) return;
-
     if (els.profileName) els.profileName.textContent = name;
     closeProfileModal(true);
     render({ skipSave: true });
 
+    const { merged, mergedCount } = await claimCloudIdentity(name);
     saveState({ immediate: true, reason: merged ? 'progress-restored' : 'profile-claimed' });
-    render({ skipSave: true });
+    render();
 
     const mod = await ensureCloudSync();
     if (mod && typeof mod.pushDeviceProfile === 'function') {
@@ -1613,7 +1606,7 @@ function init() {
   closeSessionModal();
   if (els.profileName) els.profileName.textContent = state.profile.name || 'Guest';
   ensureProfile();
-  render({ skipSave: true });
+  render();
 
   if (state.running) {
     if (!restoreTimerFromCheckpoint()) {
@@ -1646,19 +1639,19 @@ function init() {
 
   window.addEventListener('beforeunload', () => {
     saveTimerCheckpoint();
-    saveState({ skipCloudSync: true, touchUpdatedAt: false, reason: 'beforeunload' });
+    saveState({ immediate: true, reason: 'beforeunload' });
   });
 
   window.addEventListener('pagehide', () => {
     saveTimerCheckpoint();
-    saveState({ skipCloudSync: true, touchUpdatedAt: false, reason: 'pagehide' });
+    saveState({ immediate: true, reason: 'pagehide' });
     releaseWakeLock();
   });
 
   window.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
       saveTimerCheckpoint();
-      saveState({ skipCloudSync: true, touchUpdatedAt: false, reason: 'hidden' });
+      saveState({ immediate: true, reason: 'hidden' });
       return;
     }
     if (document.visibilityState === 'visible' && state.running) {
@@ -1774,10 +1767,13 @@ els.logBtn.addEventListener('click', () => {
     openSessionModal();
     return;
   }
-  const wasFocus = state.currentMode === 'focus';
+  if (state.currentMode !== 'focus') {
+    showToast('Finish your break first, then log the focus session');
+    return;
+  }
   const completedRound = state.cycleCount;
-  const elapsedFocusMinutes = wasFocus
-    ? (state.remaining < state.total ? Math.max(1, Math.round((state.total - state.remaining) / 60)) : state.focus)
+  const elapsedFocusMinutes = state.remaining < state.total
+    ? Math.max(1, Math.round((state.total - state.remaining) / 60))
     : state.focus;
   if (state.running) pauseTimer();
   state.pendingSession = {
@@ -1837,7 +1833,7 @@ function cleanupAndRefresh(options = {}) {
   updateAchievements();
   if (state.page === 'analytics') renderAnalytics();
   else renderTimerOnly();
-  if (!options.skipSave) saveState({ skipCloudSync: true, touchUpdatedAt: false, reason: 'cleanup-refresh' });
+  if (!options.skipSave) saveState();
 }
 init();
 cleanupAndRefresh({ skipSave: true });
@@ -1869,5 +1865,5 @@ function tick() {
 
   saveTimerCheckpoint();
   renderTimerOnly();
-  saveState({ skipCloudSync: true, touchUpdatedAt: false, reason: 'timer-tick' });
+  saveState();
 }

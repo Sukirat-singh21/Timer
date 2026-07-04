@@ -142,13 +142,37 @@
           </div>
         </div>
 
-        <div class="card">
-          <div class="section-heading">
-            <h2>Leaderboard</h2>
-            <span id="leaderboardUpdatedAt">Live</span>
+      </section>
+
+      <section class="page" id="leaderboardPage">
+        <div class="card leaderboard-header">
+          <div>
+            <div class="eyebrow">Leaderboard</div>
+            <h2>Shared progress board</h2>
+            <p>Sorted by total study minutes, then questions. Medals highlight the top 3 players.</p>
           </div>
-          <div class="mini-lines" id="leaderboardList">
-            <div class="mini-line"><span>No leaderboard data yet</span><strong>0h</strong></div>
+          <div class="analytics-stats leaderboard-summary">
+            <div class="mini-stat"><span>Players</span><strong id="leaderboardCount">0 players</strong></div>
+            <div class="mini-stat"><span>Top rank</span><strong>🥇</strong></div>
+            <div class="mini-stat"><span>Updated</span><strong id="leaderboardUpdatedAt">Live</strong></div>
+          </div>
+        </div>
+
+        <div class="card leaderboard-podium-card">
+          <div class="section-heading">
+            <h2>Podium</h2>
+            <span>Top 3</span>
+          </div>
+          <div class="leaderboard-podium" id="leaderboardPodium"></div>
+        </div>
+
+        <div class="card leaderboard-list-card">
+          <div class="section-heading">
+            <h2>All players</h2>
+            <span>Sorted by hours</span>
+          </div>
+          <div class="leaderboard-list mini-lines" id="leaderboardList">
+            <div class="leaderboard-empty">No leaderboard data yet</div>
           </div>
         </div>
       </section>
@@ -166,6 +190,7 @@
     </div>
     <button class="drawer-item active" data-page="timer">Timer</button>
     <button class="drawer-item" data-page="analytics">Analytics</button>
+    <button class="drawer-item" data-page="leaderboard">Leaderboard</button>
     <button class="drawer-item" id="backupBtn">Export backup</button>
     <button class="drawer-item" id="clearDataBtn">Clear local data</button>
 
