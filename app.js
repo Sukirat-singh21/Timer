@@ -1769,26 +1769,16 @@ els.resetBtn.addEventListener('click', () => {
   closeSessionModal();
   render();
 });
-function getLoggableFocusMinutes() {
-  if (state.pendingSession) return state.pendingSession.minutes;
-  if (state.currentMode !== 'focus') return 0;
-  const totalSeconds = Math.max(1, Number(state.total) || secondsForMode('focus'));
-  const remainingSeconds = Math.max(0, Number(state.remaining) || 0);
-  if (remainingSeconds >= totalSeconds) return 0;
-  return Math.max(1, Math.round((totalSeconds - remainingSeconds) / 60));
-}
-
 els.logBtn.addEventListener('click', () => {
   if (state.pendingSession) {
     openSessionModal();
     return;
   }
-  const elapsedFocusMinutes = getLoggableFocusMinutes();
-  if (!elapsedFocusMinutes) {
-    showToast('Start a focus session before logging');
-    return;
-  }
+  const wasFocus = state.currentMode === 'focus';
   const completedRound = state.cycleCount;
+  const elapsedFocusMinutes = wasFocus
+    ? (state.remaining < state.total ? Math.max(1, Math.round((state.total - state.remaining) / 60)) : state.focus)
+    : state.focus;
   if (state.running) pauseTimer();
   state.pendingSession = {
     minutes: elapsedFocusMinutes,
