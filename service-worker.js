@@ -1,4 +1,4 @@
-const CACHE = 'jee-pomodoro-flow-v10';
+const CACHE = 'jee-pomodoro-flow-v11';
 const ASSETS = ['./', 'index.html', 'style.css', 'app.js', 'manifest.json', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', event => {
@@ -14,6 +14,20 @@ self.addEventListener('fetch', event => {
 
   const requestUrl = new URL(event.request.url);
   if (requestUrl.origin !== self.location.origin) return;
+
+  const isAppShell = event.request.mode === 'navigate' || /\.(js|html|css)$/.test(requestUrl.pathname);
+  if (isAppShell) {
+    event.respondWith(
+      fetch(event.request).then(resp => {
+        if (resp && resp.ok && resp.type === 'basic') {
+          const copy = resp.clone();
+          caches.open(CACHE).then(cache => cache.put(event.request, copy)).catch(() => {});
+        }
+        return resp;
+      }).catch(() => caches.match(event.request).then(cached => cached || caches.match('index.html')))
+    );
+    return;
+  }
 
   event.respondWith(
     caches.match(event.request).then(cached => {

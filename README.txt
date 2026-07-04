@@ -18,7 +18,7 @@ Main features:
 - Firebase cloud sync for study records and leaderboard totals
 - Hamburger menu navigation
 - Local storage with cloud backup/sync when online
-- Offline-capable PWA.
+- Offline-capable PWA
 
 How to use:
 - Upload the files to GitHub Pages
