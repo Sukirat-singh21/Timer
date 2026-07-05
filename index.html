@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
   <meta name="theme-color" content="#0f172a" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -20,7 +20,6 @@
         <div class="brand-title" id="appTitle">JEE Pomodoro Flow</div>
         <div class="brand-subtitle">Study timer + subject tracking</div>
       </div>
-      <div class="profile-pill" id="profileName">Guest</div>
       <button class="ghost-btn" id="aboutBtn">About</button>
     </header>
 
@@ -50,7 +49,7 @@
                 </defs>
               </svg>
               <div class="inner">
-                <div class="time" id="timer" aria-live="polite">25:00</div>
+                <div class="time" id="timer">25:00</div>
                 <div class="mode" id="modeLabel">Focus</div>
               </div>
             </div>
@@ -122,7 +121,6 @@
           </div>
           <div class="chip-row" id="periodChips"></div>
           <div class="graph-wrap" id="graphArea"></div>
-          <div class="analytics-detail" id="analyticsDetail">Tap a bar to see hours and questions.</div>
           <div class="legend">
             <span><i class="dot phy"></i>Physics</span>
             <span><i class="dot chem"></i>Chemistry</span>
@@ -141,40 +139,6 @@
             <div class="achievement" id="achEnayat">Enayat's Challenge</div>
           </div>
         </div>
-
-      </section>
-
-      <section class="page" id="leaderboardPage">
-        <div class="card leaderboard-header">
-          <div>
-            <div class="eyebrow">Leaderboard</div>
-            <h2>Shared progress board</h2>
-            <p>Sorted by total study minutes, then questions. Medals highlight the top 3 players.</p>
-          </div>
-          <div class="analytics-stats leaderboard-summary">
-            <div class="mini-stat"><span>Players</span><strong id="leaderboardCount">0 players</strong></div>
-            <div class="mini-stat"><span>Top rank</span><strong>🥇</strong></div>
-            <div class="mini-stat"><span>Updated</span><strong id="leaderboardUpdatedAt">Live</strong></div>
-          </div>
-        </div>
-
-        <div class="card leaderboard-podium-card">
-          <div class="section-heading">
-            <h2>Podium</h2>
-            <span>Top 3</span>
-          </div>
-          <div class="leaderboard-podium" id="leaderboardPodium"></div>
-        </div>
-
-        <div class="card leaderboard-list-card">
-          <div class="section-heading">
-            <h2>All players</h2>
-            <span>Sorted by hours</span>
-          </div>
-          <div class="leaderboard-list mini-lines" id="leaderboardList">
-            <div class="leaderboard-empty">No leaderboard data yet</div>
-          </div>
-        </div>
       </section>
     </main>
   </div>
@@ -190,7 +154,6 @@
     </div>
     <button class="drawer-item active" data-page="timer">Timer</button>
     <button class="drawer-item" data-page="analytics">Analytics</button>
-    <button class="drawer-item" data-page="leaderboard">Leaderboard</button>
     <button class="drawer-item" id="backupBtn">Export backup</button>
     <button class="drawer-item" id="clearDataBtn">Clear local data</button>
 
@@ -203,32 +166,32 @@
     </div>
   </aside>
 
-  <div class="modal hidden" id="sessionModal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="sessionModalTitle" aria-describedby="sessionModalDescription">
+  <div class="modal hidden" id="sessionModal">
     <div class="modal-card">
       <div class="modal-head">
         <div>
-          <h3 id="sessionModalTitle">Log session</h3>
-          <p id="sessionModalDescription">Pick a subject and enter the questions solved.</p>
+          <h3>Log session</h3>
+          <p>Pick a subject and enter the questions solved.</p>
         </div>
-        <button class="icon-btn small" id="closeModalBtn" aria-label="Close log session">✕</button>
+        <button class="icon-btn small" id="closeModalBtn">✕</button>
       </div>
 
       <div class="field">
         <label>Subject</label>
         <div class="chip-row" id="subjectChips">
-          <button class="chip active" data-subject="Physics" aria-pressed="true">Physics</button>
-          <button class="chip" data-subject="Chemistry" aria-pressed="false">Chemistry</button>
-          <button class="chip" data-subject="Maths" aria-pressed="false">Maths</button>
+          <button class="chip active" data-subject="Physics">Physics</button>
+          <button class="chip" data-subject="Chemistry">Chemistry</button>
+          <button class="chip" data-subject="Maths">Maths</button>
         </div>
       </div>
 
       <div class="field">
-        <label for="questionInput">Questions solved</label>
+        <label>Questions solved</label>
         <input id="questionInput" type="number" min="0" step="1" placeholder="42" />
       </div>
 
       <div class="field">
-        <label for="noteInput">Optional note</label>
+        <label>Optional note</label>
         <input id="noteInput" type="text" maxlength="60" placeholder="Electrostatics module" />
       </div>
 
@@ -239,50 +202,7 @@
     </div>
   </div>
 
-  <div class="modal hidden" id="analyticsSessionModal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="analyticsSessionTitle" aria-describedby="analyticsSessionDescription">
-    <div class="modal-card analytics-session-card">
-      <div class="modal-head">
-        <div>
-          <h3 id="analyticsSessionTitle">Session details</h3>
-          <p id="analyticsSessionDescription">Tap a bar to inspect the saved study time, question count, and all sessions behind that day.</p>
-        </div>
-        <button class="icon-btn small" id="closeAnalyticsSessionBtn" aria-label="Close session details">X</button>
-      </div>
-
-      <div class="analytics-session-grid">
-        <div class="mini-line"><span>Date</span><strong id="analyticsSessionDate">--</strong></div>
-        <div class="mini-line"><span>Time</span><strong id="analyticsSessionTime">--</strong></div>
-        <div class="mini-line"><span>Questions</span><strong id="analyticsSessionQuestions">0</strong></div>
-        <div class="mini-line"><span>Sessions</span><strong id="analyticsSessionCount">0</strong></div>
-      </div>
-      <div class="mini-lines analytics-subject-questions" id="analyticsSubjectQuestions"></div>
-
-      <div class="modal-actions">
-        <button class="soft danger" id="deleteAnalyticsSessionBtn">Delete day sessions</button>
-        <button class="primary" id="closeAnalyticsSessionFooterBtn">Close</button>
-      </div>
-    </div>
-  </div>
-
   <div class="toast hidden" id="toast"></div>
-
-  <div class="modal hidden" id="profileModal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="profileTitle" aria-describedby="profileDescription">
-    <div class="modal-card">
-      <div class="modal-head">
-        <div>
-          <h3 id="profileTitle">Your name</h3>
-          <p id="profileDescription">This name is shown on the shared leaderboard.</p>
-        </div>
-      </div>
-      <div class="field">
-        <label for="profileInput">Display name</label>
-        <input id="profileInput" type="text" maxlength="40" placeholder="Enter your name" />
-      </div>
-      <div class="modal-actions">
-        <button class="primary" id="profileSaveBtn">Save name</button>
-      </div>
-    </div>
-  </div>
 
   <script src="app.js"></script>
   <script>

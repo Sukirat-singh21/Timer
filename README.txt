@@ -14,10 +14,8 @@ Main features:
 - Manual subject + question logging
 - Weekly analytics generated dynamically from stored sessions
 - Monthly analytics grouped by week
-- First-run name prompt for leaderboard identity
-- Firebase cloud sync for study records and leaderboard totals
 - Hamburger menu navigation
-- Local storage with cloud backup/sync when online
+- Local storage only
 - Offline-capable PWA
 
 How to use:
@@ -26,9 +24,8 @@ How to use:
 - Install from Chrome / Add to Home Screen
 
 Data notes:
-- Session data is stored locally first, then queued to Firebase when online
-- Leaderboard rows are shared across devices and ranked by total study time
-- Clearing site data removes this device's local copy and identity
+- Session data is stored locally in the browser on the device
+- Clearing site data will erase it
 - Export backup is available from the menu
 
 Easter eggs:
