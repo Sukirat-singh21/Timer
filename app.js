@@ -1,7 +1,8 @@
 const $ = (id) => document.getElementById(id);
 const CIRC = 515.22;
 const SUBJECTS = ['Physics', 'Chemistry', 'Maths'];
-const STORAGE_KEY = 'jee_pomodoro_flow_v4';
+const STORAGE_KEY = 'jee_pomodoro_flow_v5';
+const LEGACY_STORAGE_KEYS = ['jee_pomodoro_flow_v4'];
 const PROFILE_KEY = 'jee_pomodoro_flow_v4_profile';
 const DAY_MS = 86400000;
 const CLOUD_SYNC_ENABLED = true;
@@ -20,6 +21,22 @@ const els = {
   profileName: $('profileName'),
   leaderboardList: $('leaderboardList'),
   leaderboardUpdatedAt: $('leaderboardUpdatedAt'),
+  leaderboardCount: $('leaderboardCount'),
+  leaderboardPodium: $('leaderboardPodium'),
+  leaderboardPage: $('leaderboardPage'),
+  achievementsPage: $('achievementsPage'),
+  settingsPage: $('settingsPage'),
+  settingsFocusInput: $('settingsFocusInput'),
+  settingsShortBreakInput: $('settingsShortBreakInput'),
+  settingsLongBreakInput: $('settingsLongBreakInput'),
+  settingsRoundsInput: $('settingsRoundsInput'),
+  settingsNoBreakInput: $('settingsNoBreakInput'),
+  settingsAutoStartInput: $('settingsAutoStartInput'),
+  settingsSoundInput: $('settingsSoundInput'),
+  settingsPulseInput: $('settingsPulseInput'),
+  settingsResetBtn: $('settingsResetBtn'),
+  sessionModalDescription: $('sessionModalDescription'),
+  sessionDuration: $('sessionDuration'),
   drawer: $('drawer'),
   drawerBackdrop: $('drawerBackdrop'),
   closeDrawerBtn: $('closeDrawerBtn'),
@@ -72,6 +89,10 @@ const els = {
   achMadeBy: $('achMadeBy'),
   achJee: $('achJee'),
   achEnayat: $('achEnayat'),
+  achUnlockedCount: $('achUnlockedCount'),
+  achEnayatFill: $('achEnayatFill'),
+  achEnayatLabel: $('achEnayatLabel'),
+  achEnayatBadge: $('achEnayatBadge'),
 };
 
 const defaultState = {
@@ -82,6 +103,7 @@ const defaultState = {
   autoStart: false,
   sound: true,
   pulse: true,
+  noBreakMode: false,
   currentMode: 'focus',
   cycleCount: 1,
   running: false,
@@ -100,7 +122,8 @@ const defaultState = {
   updatedAt: 0,
   aboutPulseShown: false,
   profile: { name: '', createdAt: 0, updatedAt: 0 },
-  achievements: { madeBy: true, jee: true, enayat: false }
+  achievements: { madeBy: true, jee: true, enayat: false },
+  theme: 'nebula'
 };
 
 let state = loadState();
@@ -120,6 +143,7 @@ let cloudRetryTimer = null;
 let cloudSyncInFlight = false;
 let cloudSyncRequested = false;
 let cloudLastAppliedAt = 0;
+let cloudGeneration = { stateGeneration: 0, leaderboardGeneration: 0, updatedAt: 0, exists: false };
 let cloudQueue = null;
 let cloudClientId = null;
 let leaderboardRows = [];
@@ -128,7 +152,13 @@ let profileHydrationStarted = false;
 
 function loadState() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    let raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      for (const key of LEGACY_STORAGE_KEYS) {
+        raw = localStorage.getItem(key);
+        if (raw) break;
+      }
+    }
     if (!raw) return cloneDefaultState();
     const parsed = JSON.parse(raw);
     cloudLastAppliedAt = Number(parsed.updatedAt || 0) || 0;
@@ -149,12 +179,9 @@ function loadProfile() {
 }
 function saveState(options = {}) {
   try {
-    const touchUpdatedAt = options.touchUpdatedAt !== false;
-    if (touchUpdatedAt) {
-      state.updatedAt = Date.now();
-    }
+    state.updatedAt = Date.now();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    if (!options.skipCloudSync) {
+    if (!options.skipCloud) {
       queueCloudSync(options);
     }
     return true;
@@ -173,7 +200,7 @@ function normalizeProfile(profile) {
     updatedAt: Number(profile.updatedAt || 0) || 0
   };
 }
-function saveProfile(profile, options = {}) {
+function saveProfile(profile) {
   try {
     state.profile = normalizeProfile(profile);
     if (!state.profile.createdAt) state.profile.createdAt = Date.now();
@@ -181,9 +208,7 @@ function saveProfile(profile, options = {}) {
     localStorage.setItem(PROFILE_KEY, JSON.stringify(state.profile));
     state.updatedAt = Date.now();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    if (!options.skipCloudSync) {
-      queueCloudSync({ reason: 'profile-change', immediate: true });
-    }
+    queueCloudSync({ reason: 'profile-change', immediate: true });
     return true;
   } catch (error) {
     logCloud('error', 'Profile save failed.', error);
@@ -235,7 +260,8 @@ function normalizeCloudQueue(queue) {
     attempts: Math.max(0, Number.parseInt(queue.attempts, 10) || 0),
     nextAttemptAt: Math.max(0, Number(queue.nextAttemptAt || 0) || 0),
     lastError: String(queue.lastError || ''),
-    reason: String(queue.reason || 'state-change')
+    reason: String(queue.reason || 'state-change'),
+    generation: normalizeCloudGeneration(queue.generation || {})
   };
 }
 function loadCloudQueue() {
@@ -291,7 +317,8 @@ function queueCloudSync(options = {}) {
     attempts: cloudQueue ? cloudQueue.attempts : 0,
     nextAttemptAt: 0,
     lastError: '',
-    reason: options.reason || 'state-change'
+    reason: options.reason || 'state-change',
+    generation: normalizeCloudGeneration(cloudGeneration)
   };
   persistCloudQueue();
   clearTimeout(cloudSyncTimer);
@@ -314,6 +341,33 @@ async function ensureCloudSync() {
   }
   return cloudSyncReady;
 }
+
+function normalizeCloudGeneration(generation) {
+  const fallback = { stateGeneration: 0, leaderboardGeneration: 0, updatedAt: 0, exists: false, lastResetAt: 0, lastResetBy: '' };
+  if (!generation || typeof generation !== 'object') return fallback;
+  return {
+    stateGeneration: Math.max(0, Number(generation.stateGeneration || 0) || 0),
+    leaderboardGeneration: Math.max(0, Number(generation.leaderboardGeneration || 0) || 0),
+    updatedAt: Math.max(0, Number(generation.updatedAt || generation.lastResetAt || 0) || 0),
+    exists: Boolean(generation.exists || generation.stateGeneration || generation.leaderboardGeneration || generation.updatedAt),
+    lastResetAt: Math.max(0, Number(generation.lastResetAt || 0) || 0),
+    lastResetBy: String(generation.lastResetBy || '').trim().slice(0, 80)
+  };
+}
+
+async function refreshCloudGeneration(options = {}) {
+  const mod = await ensureCloudSync();
+  if (!mod || typeof mod.refreshCloudGeneration !== 'function') return cloudGeneration;
+  try {
+    const next = normalizeCloudGeneration(await mod.refreshCloudGeneration());
+    cloudGeneration = next;
+    return cloudGeneration;
+  } catch (error) {
+    logCloud('warn', 'Could not refresh cloud generation.', error);
+    return cloudGeneration;
+  }
+}
+
 // Given a name, checks the cloud for any existing progress under that name
 // (and under this device's legacy anonymous id) and merges it into local
 // state. This must run BEFORE any push to the cloud whenever a name is
@@ -375,14 +429,21 @@ async function hydrateProfileFromCloud() {
   render({ skipSave: true });
   return normalizedRemote;
 }
-async function pushCloudStateNow(reason = 'state-change') {
+async function pushCloudStateNow(reason = 'state-change', generationOverride = null) {
   const mod = await ensureCloudSync();
   if (!mod || typeof mod.pushCloudState !== 'function') return { ok: false, reason: 'firebase-unavailable' };
   const snapshot = cloudQueue && cloudQueue.state ? cloudQueue.state : getCloudSafeState();
   const identityName = normalizeProfile(state.profile || loadProfile()).name || '';
-  const result = await mod.pushCloudState(snapshot, { clientId: cloudClientId, reason, identityName });
+  const generation = normalizeCloudGeneration(generationOverride || cloudGeneration);
+  const result = await mod.pushCloudState(snapshot, {
+    clientId: cloudClientId,
+    reason,
+    identityName,
+    generation: { stateGeneration: generation.stateGeneration }
+  });
   if (result && result.ok) {
     cloudLastAppliedAt = Number(snapshot.updatedAt || Date.now()) || Date.now();
+    cloudGeneration = normalizeCloudGeneration(result.currentGeneration || generation);
   }
   return result || { ok: false, reason: 'unknown' };
 }
@@ -393,17 +454,33 @@ function getStudyTotals() {
     totalQuestions: recs.reduce((a, r) => a + (Number(r.questions) || 0), 0)
   };
 }
-async function syncLeaderboardNow(reason = 'state-change') {
+async function syncLeaderboardNow(reason = 'state-change', generationOverride = null) {
   const mod = await ensureCloudSync();
   if (!mod || typeof mod.pushLeaderboardStats !== 'function') return false;
   const profile = normalizeProfile(state.profile || loadProfile());
   if (!profile.name) return false;
+  const generation = normalizeCloudGeneration(generationOverride || await refreshCloudGeneration());
+  const localUpdatedAt = Number(state.updatedAt || 0) || 0;
+  const hasMeaningfulData = getRecords().length > 0;
+  if (generation.updatedAt && (!hasMeaningfulData || localUpdatedAt <= generation.updatedAt)) {
+    logCloud('info', 'Skipping leaderboard push: local data predates the current cloud generation.', {
+      reason,
+      localUpdatedAt,
+      generation
+    });
+    return false;
+  }
   const stats = getStudyTotals();
   const result = await mod.pushLeaderboardStats(profile, stats, {
     clientId: cloudClientId,
-    updatedAt: state.updatedAt || Date.now(),
-    reason
+    updatedAt: localUpdatedAt || Date.now(),
+    reason,
+    generation: { leaderboardGeneration: generation.leaderboardGeneration }
   });
+  if (result && result.reason === 'generation-mismatch') {
+    cloudGeneration = normalizeCloudGeneration(result.currentGeneration || generation);
+    return false;
+  }
   return Boolean(result && result.ok);
 }
 async function refreshLeaderboard(options = {}) {
@@ -497,15 +574,43 @@ async function flushCloudSync(options = {}) {
   const queueAtStart = cloudQueue;
 
   try {
-    const result = await pushCloudStateNow(options.reason || 'state-change');
+    const generation = await refreshCloudGeneration({ force: true });
+    const queueUpdatedAt = Number(cloudQueue?.state?.updatedAt || 0) || 0;
+    const generationUpdatedAt = Number(generation?.updatedAt || 0) || 0;
+    if (generationUpdatedAt && queueUpdatedAt && queueUpdatedAt <= generationUpdatedAt) {
+      logCloud('info', 'Dropping stale cloud queue after generation bump.', { queueUpdatedAt, generationUpdatedAt, reason: options.reason || 'state-change' });
+      clearCloudQueue();
+      await pullCloudStateIfNewer({ force: true, reason: options.reason || 'generation-reconcile' });
+      return false;
+    }
+
+    const result = await pushCloudStateNow(options.reason || 'state-change', generation);
     if (result && result.ok) {
       logCloud('info', 'Cloud sync completed.', { reason: options.reason || 'state-change', updatedAt: cloudLastAppliedAt });
       if (cloudQueue === queueAtStart) {
         clearCloudQueue();
       }
-      void syncLeaderboardNow(options.reason || 'state-change');
+      void syncLeaderboardNow(options.reason || 'state-change', generation);
       void refreshLeaderboard({ force: true });
       return true;
+    }
+
+    if (result && result.reason === 'generation-mismatch') {
+      const latestGeneration = normalizeCloudGeneration(await refreshCloudGeneration({ force: true }));
+      const staleQueueUpdatedAt = Number(cloudQueue?.state?.updatedAt || 0) || 0;
+      const latestGenerationUpdatedAt = Number(latestGeneration.updatedAt || 0) || 0;
+      cloudGeneration = latestGeneration;
+      if (!staleQueueUpdatedAt || (latestGenerationUpdatedAt && staleQueueUpdatedAt <= latestGenerationUpdatedAt)) {
+        clearCloudQueue();
+        await pullCloudStateIfNewer({ force: true, reason: options.reason || 'post-wipe-reconcile' });
+        return false;
+      }
+      if (getRecords().length > 0 && Number(state.updatedAt || 0) > latestGenerationUpdatedAt) {
+        queueCloudSync({ reason: 'post-wipe-fresh-data', immediate: true });
+      } else {
+        clearCloudQueue();
+      }
+      return false;
     }
 
     if (result && result.stale) {
@@ -543,10 +648,11 @@ async function flushCloudSync(options = {}) {
 }
 async function reconcileCloudState(options = {}) {
   if (!CLOUD_SYNC_ENABLED) return false;
-  let changed = Boolean(await pullCloudStateIfNewer({ force: true, reason: options.reason || 'reconcile' }));
+  let changed = false;
   if (cloudQueue && cloudQueue.state) {
     changed = Boolean(await flushCloudSync({ force: Boolean(options.force || navigator.onLine !== false), reason: options.reason || 'reconcile' })) || changed;
   }
+  changed = Boolean(await pullCloudStateIfNewer({ force: true, reason: options.reason || 'reconcile' })) || changed;
   return changed;
 }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
@@ -653,13 +759,14 @@ function normalizeState(nextState) {
   const normalized = { ...cloneDefaultState(), ...(nextState && typeof nextState === 'object' ? nextState : {}) };
   normalized.currentMode = ['focus', 'short', 'long'].includes(normalized.currentMode) ? normalized.currentMode : 'focus';
   normalized.analyticsView = normalized.analyticsView === 'monthly' ? 'monthly' : 'weekly';
-  normalized.page = normalized.page === 'analytics' ? 'analytics' : 'timer';
+  normalized.page = ['timer', 'analytics', 'settings', 'leaderboard', 'achievements'].includes(normalized.page) ? normalized.page : 'timer';
   normalized.lastSubject = safeSubject(normalized.lastSubject);
   normalized.analyticsSelections = {
     weekly: Number.isFinite(normalized.analyticsSelections?.weekly) ? normalized.analyticsSelections.weekly : -1,
     monthly: Number.isFinite(normalized.analyticsSelections?.monthly) ? normalized.analyticsSelections.monthly : -1
   };
   normalized.achievements = { ...cloneDefaultState().achievements, ...(normalized.achievements || {}) };
+  normalized.noBreakMode = Boolean(normalized.noBreakMode);
   normalized.profile = normalizeProfile(normalized.profile || loadProfile());
   const seenRecordIds = new Set();
   normalized.records = Array.isArray(normalized.records)
@@ -676,17 +783,20 @@ function normalizeState(nextState) {
   normalized.running = Boolean(normalized.running);
   normalized.pendingSession = normalizePendingSession(normalized.pendingSession);
   normalized.timerCheckpoint = normalizeTimerCheckpoint(normalized.timerCheckpoint);
+  normalized.theme = ['nebula', 'ocean', 'ember'].includes(normalized.theme) ? normalized.theme : 'nebula';
   return normalized;
 }
 
 function normalizePendingSession(session) {
   if (!session || typeof session !== 'object') return null;
-  return {
-    minutes: Math.max(1, Math.min(24 * 60, Math.round(Number(session.minutes) || 25))),
-    nextMode: ['short', 'long'].includes(session.nextMode) ? session.nextMode : 'short',
-    sessionDate: isDateKey(session.sessionDate) ? session.sessionDate : dkey(new Date()),
-    roundCompleted: Math.max(1, Number.parseInt(session.roundCompleted, 10) || 1)
-  };
+  return createPendingSession({
+    minutes: session.minutes,
+    nextMode: session.nextMode,
+    sessionDate: session.sessionDate,
+    roundCompleted: session.roundCompleted,
+    wasNoBreak: session.wasNoBreak,
+    restoreState: session.restoreState
+  });
 }
 
 function normalizeTimerCheckpoint(checkpoint) {
@@ -698,6 +808,64 @@ function normalizeTimerCheckpoint(checkpoint) {
     mode: ['focus', 'short', 'long'].includes(checkpoint.mode) ? checkpoint.mode : 'focus',
     cycleCount: Math.max(1, Number.parseInt(checkpoint.cycleCount, 10) || 1)
   };
+}
+
+function normalizeTimerSnapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return null;
+  return {
+    currentMode: ['focus', 'short', 'long'].includes(snapshot.currentMode) ? snapshot.currentMode : 'focus',
+    remaining: Math.max(0, Number(snapshot.remaining) || 0),
+    total: Math.max(1, Number(snapshot.total) || 1),
+    cycleCount: Math.max(1, Number.parseInt(snapshot.cycleCount, 10) || 1),
+    running: Boolean(snapshot.running)
+  };
+}
+
+function createTimerSnapshot() {
+  return normalizeTimerSnapshot({
+    currentMode: state.currentMode,
+    remaining: state.remaining,
+    total: state.total,
+    cycleCount: state.cycleCount,
+    running: state.running
+  });
+}
+
+function createPendingSession(base = {}) {
+  return {
+    minutes: Math.max(1, Math.min(24 * 60, Math.round(Number(base.minutes) || state.focus))),
+    nextMode: ['short', 'long'].includes(base.nextMode) ? base.nextMode : 'short',
+    sessionDate: isDateKey(base.sessionDate) ? base.sessionDate : dkey(new Date()),
+    roundCompleted: Math.max(1, Number.parseInt(base.roundCompleted, 10) || 1),
+    wasNoBreak: Boolean(base.wasNoBreak),
+    restoreState: normalizeTimerSnapshot(base.restoreState || createTimerSnapshot())
+  };
+}
+
+function restorePendingSessionState(options = {}) {
+  const pending = state.pendingSession;
+  if (!pending) return false;
+  const snapshot = normalizeTimerSnapshot(options.snapshot || pending.restoreState);
+  state.pendingSession = null;
+  closeSessionModal();
+  if (snapshot) {
+    state.currentMode = snapshot.currentMode;
+    state.remaining = snapshot.remaining;
+    state.total = snapshot.total;
+    state.cycleCount = snapshot.cycleCount;
+    state.running = false;
+    timerPerfStamp = 0;
+    state.timerCheckpoint = null;
+    clearInterval(interval);
+    interval = null;
+    releaseWakeLock();
+    if (state.currentMode === 'focus') {
+      els.statusPill.textContent = 'Ready to lock in';
+    } else {
+      els.statusPill.textContent = 'Break ready';
+    }
+  }
+  return true;
 }
 
 function getRecords() { return Array.isArray(state.records) ? state.records : []; }
@@ -733,7 +901,8 @@ function advanceCycleAfterFocus(round = state.cycleCount) {
   state.cycleCount = round % state.roundsBeforeLong === 0 ? 1 : round + 1;
 }
 function modeName(mode) {
-  return mode === 'focus' ? 'Focus' : mode === 'short' ? 'Short break' : 'Long break';
+  if (mode === 'focus') return state.noBreakMode ? 'Continuous focus' : 'Focus';
+  return mode === 'short' ? 'Short break' : 'Long break';
 }
 function subjectColorClass(subject) {
   return subject === 'Physics' ? 'phy' : subject === 'Chemistry' ? 'chem' : 'math';
@@ -762,10 +931,13 @@ function closeDrawer() {
   els.drawerBackdrop.classList.add('hidden');
 }
 function setPage(page) {
-  state.page = page;
-  els.timerPage.classList.toggle('active', page === 'timer');
-  els.analyticsPage.classList.toggle('active', page === 'analytics');
-  document.querySelectorAll('.drawer-item[data-page]').forEach(btn => btn.classList.toggle('active', btn.dataset.page === page));
+  state.page = ['timer', 'analytics', 'settings', 'leaderboard', 'achievements'].includes(page) ? page : 'timer';
+  els.timerPage.classList.toggle('active', state.page === 'timer');
+  if (els.analyticsPage) els.analyticsPage.classList.toggle('active', state.page === 'analytics');
+  if (els.settingsPage) els.settingsPage.classList.toggle('active', state.page === 'settings');
+  if (els.leaderboardPage) els.leaderboardPage.classList.toggle('active', state.page === 'leaderboard');
+  if (els.achievementsPage) els.achievementsPage.classList.toggle('active', state.page === 'achievements');
+  document.querySelectorAll('.drawer-item[data-page]').forEach(btn => btn.classList.toggle('active', btn.dataset.page === state.page));
   saveState();
   closeDrawer();
   render();
@@ -793,12 +965,9 @@ function updateTodaySummary() {
   const todayQuestions = questions;
   const enayatUnlocked = todayQuestions >= 100;
   state.achievements.enayat = enayatUnlocked;
-  els.achEnayat.classList.toggle('unlocked', enayatUnlocked);
-  els.achEnayat.classList.toggle('locked', !enayatUnlocked);
-  if (enayatUnlocked) els.achEnayat.textContent = "Enayat's Challenge";
-  else els.achEnayat.textContent = "Enayat's Challenge";
 
   state.streak = computeCurrentStreak(getRecords());
+  renderAchievements();
 }
 function addRecord({subject, questions, note, minutes, date}) {
   const safeQuestions = Math.max(0, Number.parseInt(questions, 10) || 0);
@@ -851,9 +1020,13 @@ function updateAchievements() {
   const todayRecs = recs.filter(r => r.date === today);
   const todayQuestions = todayRecs.reduce((a, r) => a + (Number(r.questions) || 0), 0);
   const enayatUnlocked = todayQuestions >= 100;
+  const wasLocked = !state.achievements.enayat;
   state.achievements.enayat = enayatUnlocked;
-  els.achEnayat.classList.toggle('unlocked', enayatUnlocked);
-  els.achEnayat.classList.toggle('locked', !enayatUnlocked);
+  if (enayatUnlocked && wasLocked) {
+    playSound('achievement');
+    showToast('🏆 Enayat\'s Challenge unlocked!', 3200);
+  }
+  renderAchievements();
 }
 function buildWeeklyBuckets() {
   const recs = getRecords().filter(r => {
@@ -940,13 +1113,18 @@ function render(options = {}) {
   els.timer.textContent = fmt(state.remaining);
   els.modeLabel.textContent = modeName(state.currentMode);
   els.sessionMini.textContent = state.currentMode === 'focus'
-    ? `Round ${state.cycleCount} of ${state.roundsBeforeLong}`
+    ? (state.noBreakMode ? `Cycle ${state.cycleCount}` : `Round ${state.cycleCount} of ${state.roundsBeforeLong}`)
     : modeName(state.currentMode);
   els.startPauseBtn.textContent = running ? 'Pause' : 'Start';
+  const logAllowed = Boolean(state.pendingSession || state.currentMode === 'focus');
+  els.logBtn.disabled = !logAllowed;
+  els.logBtn.style.opacity = logAllowed ? '' : '0.38';
+  els.logBtn.title = logAllowed ? '' : 'Log Session is only available during a focus round';
   els.statusPill.textContent = running ? 'Locked in' : (
     state.pendingSession ? 'Log session' :
-    (state.currentMode !== 'focus' && state.remaining === state.total ? 'Break ready' :
-      (state.remaining === state.total ? 'Ready to lock in' : 'Paused'))
+    (state.noBreakMode && state.currentMode === 'focus' ? 'Continuous study' :
+      (state.currentMode !== 'focus' && state.remaining === state.total ? 'Break ready' :
+        (state.remaining === state.total ? 'Ready to lock in' : 'Paused')))
   );
   const pct = 1 - (state.remaining / state.total || 1);
   els.progressRing.style.strokeDashoffset = String(CIRC * (1 - clamp(pct, 0, 1)));
@@ -956,8 +1134,10 @@ function render(options = {}) {
   updateStats();
   renderTimerOnly();
   if (state.page === 'analytics') renderAnalytics();
-  else renderAchievements();
-  if (!options.skipSave) saveState({ skipCloudSync: true, touchUpdatedAt: false, reason: 'render' });
+  else if (state.page === 'settings') renderSettings();
+  else if (state.page === 'leaderboard') renderLeaderboard();
+  else if (state.page === 'achievements') renderAchievements();
+  if (!options.skipSave) saveState();
 }
 function requestWakeLock() {
   return (async () => {
@@ -1033,16 +1213,40 @@ function completeTimerCycle() {
   state.running = false;
   timerPerfStamp = 0;
   state.timerCheckpoint = null;
+
+  if (finishedMode === 'focus' && state.noBreakMode) {
+    state.cycleCount = Math.max(1, Number(state.cycleCount) || 1) + 1;
+    state.currentMode = 'focus';
+    state.total = secondsForMode('focus');
+    state.remaining = state.total;
+    state.running = true;
+    timerPerfStamp = performance.now();
+    requestWakeLock();
+    interval = setInterval(tick, 1000);
+    saveState({ immediate: true, reason: 'no-break-cycle' });
+    render({ skipSave: true });
+    return;
+  }
+
   releaseWakeLock();
 
   if (finishedMode === 'focus') {
     const completedRound = state.cycleCount;
-    state.pendingSession = {
+    const nextMode = nextBreakModeForRound(completedRound);
+    state.pendingSession = createPendingSession({
       minutes: state.focus,
-      nextMode: nextBreakModeForRound(completedRound),
+      nextMode,
       sessionDate: dkey(new Date()),
-      roundCompleted: completedRound
-    };
+      roundCompleted: completedRound,
+      wasNoBreak: false,
+      restoreState: {
+        currentMode: nextMode,
+        remaining: secondsForMode(nextMode),
+        total: secondsForMode(nextMode),
+        cycleCount: completedRound,
+        running: false
+      }
+    });
     state.currentMode = state.pendingSession.nextMode;
     state.total = secondsForMode(state.currentMode);
     state.remaining = state.total;
@@ -1053,7 +1257,6 @@ function completeTimerCycle() {
     state.currentMode = 'focus';
     state.remaining = secondsForMode('focus');
     state.total = state.remaining;
-    releaseWakeLock();
     render();
     saveState();
     if (state.autoStart) setTimeout(() => startTimer(), 450);
@@ -1076,6 +1279,72 @@ function beep(freq = 880, duration = 0.14) {
     osc.stop(now + duration + 0.05);
   } catch {}
 }
+function playTone(freq, duration, type, volume, delay) {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.frequency.value = freq || 440;
+    osc.type = type || 'sine';
+    gain.gain.value = 0.0001;
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    const start = audioCtx.currentTime + (delay || 0);
+    const vol = Math.max(0.0001, volume || 0.12);
+    gain.gain.exponentialRampToValueAtTime(vol, start + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + Math.max(0.02, duration || 0.12));
+    osc.start(start);
+    osc.stop(start + (duration || 0.12) + 0.05);
+  } catch {}
+}
+
+function playSound(soundType) {
+  if (!state.sound) return;
+  try {
+    // Resume audio context if suspended (browser autoplay policy)
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    switch (soundType) {
+      case 'start':
+        // Rising triad — energising
+        playTone(440, 0.10, 'sine', 0.10);
+        playTone(554, 0.10, 'sine', 0.09, 0.09);
+        playTone(659, 0.20, 'sine', 0.13, 0.18);
+        break;
+      case 'pause':
+        // Descending — settling
+        playTone(554, 0.10, 'sine', 0.10);
+        playTone(440, 0.16, 'sine', 0.09, 0.10);
+        break;
+      case 'save':
+        // Bright success chord
+        playTone(523, 0.11, 'sine', 0.12);
+        playTone(659, 0.11, 'sine', 0.12, 0.11);
+        playTone(784, 0.24, 'sine', 0.16, 0.22);
+        break;
+      case 'achievement':
+        // Fanfare — four ascending tones
+        playTone(523,  0.10, 'sine', 0.15);
+        playTone(659,  0.10, 'sine', 0.15, 0.13);
+        playTone(784,  0.10, 'sine', 0.15, 0.25);
+        playTone(1047, 0.32, 'sine', 0.18, 0.37);
+        break;
+      default: break;
+    }
+  } catch {}
+}
+
+function applyTheme(theme) {
+  const valid = ['nebula', 'ocean', 'ember'];
+  const t = valid.includes(theme) ? theme : 'nebula';
+  document.body.classList.remove('theme-ocean', 'theme-ember');
+  if (t !== 'nebula') document.body.classList.add(`theme-${t}`);
+  state.theme = t;
+  // Sync active state on all theme cards (settings page may not be open yet)
+  document.querySelectorAll('.theme-card[data-theme]').forEach(card => {
+    card.classList.toggle('active', card.dataset.theme === t);
+  });
+}
+
 function celebrate(mode) {
   if (state.sound) beep(mode === 'focus' ? 880 : 660, 0.18);
   if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
@@ -1089,6 +1358,7 @@ function startTimer() {
   if (state.running || state.pendingSession) return;
   clearInterval(interval);
   state.running = true;
+  playSound('start');
   timerPerfStamp = performance.now();
   saveTimerCheckpoint();
   els.statusPill.textContent = 'Locked in';
@@ -1100,6 +1370,7 @@ function startTimer() {
 }
 function pauseTimer() {
   state.running = false;
+  playSound('pause');
   timerPerfStamp = 0;
   state.timerCheckpoint = null;
   clearInterval(interval);
@@ -1119,11 +1390,30 @@ function openSessionModal() {
     btn.classList.toggle('active', active);
     btn.setAttribute('aria-pressed', String(active));
   });
+  if (els.sessionModalDescription) {
+    els.sessionModalDescription.textContent = state.noBreakMode
+      ? 'Pick a subject and enter the questions solved for this continuous study block.'
+      : 'Pick a subject and enter the questions solved.';
+  }
+  if (els.sessionDuration) {
+    const duration = state.pendingSession && Number(state.pendingSession.minutes) > 0
+      ? Number(state.pendingSession.minutes)
+      : (state.noBreakMode ? getContinuousSessionMinutes() : state.focus);
+    els.sessionDuration.textContent = minutesToHuman(Math.max(1, Math.round(duration)));
+  }
   els.questionInput.focus();
 }
 function closeSessionModal() {
   els.sessionModal.classList.add('hidden');
   els.sessionModal.setAttribute('aria-hidden', 'true');
+}
+function getContinuousSessionMinutes() {
+  const focusSeconds = Math.max(60, secondsForMode('focus'));
+  const completedCycles = Math.max(0, Math.round(Number(state.cycleCount) || 1) - 1);
+  const currentSeconds = state.currentMode === 'focus'
+    ? Math.max(0, focusSeconds - Math.max(0, Number(state.remaining) || 0))
+    : 0;
+  return Math.max(1, Math.round((completedCycles * focusSeconds + currentSeconds) / 60));
 }
 function savePendingSession() {
   if (!state.pendingSession || savingSession) return;
@@ -1132,19 +1422,22 @@ function savePendingSession() {
   const questions = Math.max(0, Number.parseInt(els.questionInput.value, 10) || 0);
   const note = els.noteInput.value || '';
   const subject = currentSubject || 'Physics';
+  const isContinuous = Boolean(state.pendingSession.wasNoBreak);
   let saved = false;
 
   try {
     const completedRound = state.pendingSession.roundCompleted || state.cycleCount;
+    const recordedMinutes = Math.max(1, Number(state.pendingSession.minutes) || state.focus);
     addRecord({
       subject,
       questions,
       note,
-      minutes: state.pendingSession.minutes || state.focus,
+      minutes: recordedMinutes,
       date: state.pendingSession.sessionDate || dkey(new Date())
     });
-    advanceCycleAfterFocus(completedRound);
+    if (!isContinuous) advanceCycleAfterFocus(completedRound);
     saved = true;
+    playSound('save');
     showToast(subject === 'Physics' ? 'Physics logged' : `${subject} saved`);
   } catch (err) {
     console.error('Save failed:', err);
@@ -1152,30 +1445,38 @@ function savePendingSession() {
   } finally {
     savingSession = false;
     els.saveLogBtn.disabled = false;
-    if (saved) {
-      const nextMode = state.pendingSession.nextMode || 'short';
-      state.pendingSession = null;
-      closeSessionModal();
-      state.currentMode = nextMode;
-      state.total = secondsForMode(nextMode);
-      state.remaining = state.total;
-      state.lastSubject = subject;
-      state.running = false;
-      timerPerfStamp = 0;
-      state.timerCheckpoint = null;
-      clearInterval(interval);
-      interval = null;
-      saveState({ immediate: true, reason: 'session-saved' });
-      render();
-      void syncLeaderboardNow('session-saved');
-      void refreshLeaderboard();
-      if (state.autoStart) setTimeout(() => startTimer(), 300);
-      else els.statusPill.textContent = 'Break ready';
+  }
+
+  if (saved) {
+    state.pendingSession = null;
+    closeSessionModal();
+    state.lastSubject = subject;
+    state.currentMode = 'focus';
+    state.total = secondsForMode('focus');
+    state.remaining = state.total;
+    state.running = false;
+    timerPerfStamp = 0;
+    state.timerCheckpoint = null;
+    clearInterval(interval);
+    interval = null;
+    releaseWakeLock();
+    if (isContinuous) {
+      state.cycleCount = 1;
     }
+    saveState({ immediate: true, reason: 'session-saved' });
+    render();
+    void syncLeaderboardNow('session-saved');
+    void refreshLeaderboard();
+    if (!isContinuous && state.autoStart) setTimeout(() => startTimer(), 300);
+    else if (!isContinuous) els.statusPill.textContent = 'Break ready';
   }
 }
 function dismissSessionModal() {
-  closeSessionModal();
+  if (state.pendingSession) {
+    restorePendingSessionState();
+  } else {
+    closeSessionModal();
+  }
   render();
 }
 function getAnalyticsIndex(view, bucketCount) {
@@ -1423,42 +1724,86 @@ function handleTitleTap() {
   }
 }
 function maybeUnlockHiddenEggs() {
-  const today = dkey(new Date());
-  const todayQuestions = getRecords().filter(r => r.date === today).reduce((a, r) => a + (Number(r.questions) || 0), 0);
-  if (todayQuestions >= 100) {
-    els.achEnayat.textContent = "Enayat's Challenge";
-    els.achEnayat.classList.add('unlocked');
-  }
+  renderAchievements();
 }
 function renderAchievements() {
-  els.achMadeBy.textContent = 'Made by Sukirat';
-  els.achJee.textContent = 'JEE mode: on';
-  els.achMadeBy.classList.add('unlocked');
-  els.achJee.classList.add('unlocked');
   const todayQuestions = getRecords().filter(r => r.date === dkey(new Date())).reduce((a, r) => a + (Number(r.questions) || 0), 0);
   const unlocked = todayQuestions >= 100;
-  els.achEnayat.textContent = unlocked ? "Enayat's Challenge" : "Enayat's Challenge (100 q/day)";
-  els.achEnayat.classList.toggle('unlocked', unlocked);
-  els.achEnayat.classList.toggle('locked', !unlocked);
+  const pct = Math.min(100, Math.round((todayQuestions / 100) * 100));
+
+  // Update the full-page achievement item
+  if (els.achEnayat) {
+    els.achEnayat.classList.toggle('ach-unlocked', unlocked);
+    els.achEnayat.classList.toggle('ach-locked', !unlocked);
+  }
+  if (els.achEnayatFill) {
+    els.achEnayatFill.style.width = `${pct}%`;
+  }
+  if (els.achEnayatLabel) {
+    els.achEnayatLabel.textContent = `${todayQuestions} / 100 q`;
+  }
+  if (els.achEnayatBadge) {
+    els.achEnayatBadge.textContent = unlocked ? '🏆' : '🔒';
+  }
+  if (els.achUnlockedCount) {
+    els.achUnlockedCount.textContent = unlocked ? '1' : '0';
+  }
 }
+
 function renderLeaderboard() {
   if (!els.leaderboardList) return;
-  if (!leaderboardRows.length) {
-    els.leaderboardList.innerHTML = '<div class="mini-line"><span>No leaderboard data yet</span><strong>0h</strong></div>';
-    if (els.leaderboardUpdatedAt) els.leaderboardUpdatedAt.textContent = 'Live';
+
+  const rows = Array.isArray(leaderboardRows) ? leaderboardRows : [];
+  const topRows = rows.slice(0, 3);
+
+  if (els.leaderboardCount) {
+    els.leaderboardCount.textContent = `${rows.length} player${rows.length === 1 ? '' : 's'}`;
+  }
+  if (els.leaderboardUpdatedAt) {
+    els.leaderboardUpdatedAt.textContent = rows.length
+      ? `Updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+      : 'Live';
+  }
+
+  if (els.leaderboardPodium) {
+    if (!topRows.length) {
+      els.leaderboardPodium.innerHTML = '<div class="podium-empty">No leaderboard data yet</div>';
+    } else {
+      const placeLabels = ['1st', '2nd', '3rd'];
+      const medals = ['🥇', '🥈', '🥉'];
+      els.leaderboardPodium.innerHTML = topRows.map((row, index) => {
+        const name = escapeHtml(String(row.name || 'Student').trim() || 'Student');
+        const hours = minutesToHuman(Math.round(Number(row.totalMinutes) || 0));
+        const questions = Number(row.totalQuestions) || 0;
+        const position = index + 1;
+        return `
+          <div class="podium-card place-${position}">
+            <div class="podium-rank">${medals[index]} ${placeLabels[index]}</div>
+            <div class="podium-name">${name}</div>
+            <div class="podium-meta">${hours} · ${questions} q</div>
+          </div>
+        `;
+      }).join('');
+    }
+  }
+
+  if (!rows.length) {
+    els.leaderboardList.innerHTML = '<div class="mini-line leaderboard-empty-row"><span>No leaderboard data yet</span><strong>0h</strong></div>';
     return;
   }
-  els.leaderboardList.innerHTML = leaderboardRows.map((row, index) => {
+
+  els.leaderboardList.innerHTML = rows.map((row, index) => {
     const name = escapeHtml(String(row.name || 'Student').trim() || 'Student');
     const hours = minutesToHuman(Math.round(Number(row.totalMinutes) || 0));
     const questions = Number(row.totalQuestions) || 0;
-    return `<div class="mini-line"><span>${index + 1}. ${name}</span><strong>${hours} · ${questions} q</strong></div>`;
+    const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
+    const rankLabel = medal ? `${medal} ${index + 1}` : `${index + 1}`;
+    const rowClass = index < 3 ? ` rank-${index + 1}` : '';
+    return `<div class="mini-line leaderboard-row${rowClass}"><span>${rankLabel}. ${name}</span><strong>${hours} · ${questions} q</strong></div>`;
   }).join('');
-  if (els.leaderboardUpdatedAt) {
-    els.leaderboardUpdatedAt.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-  }
 }
 function openProfileModal() {
+
   if (!els.profileModal) return;
   els.profileModal.classList.remove('hidden');
   els.profileModal.setAttribute('aria-hidden', 'false');
@@ -1501,20 +1846,15 @@ async function saveProfileFromInput() {
       showToast('Enter a name to continue');
       return;
     }
-
-    const { merged, mergedCount } = await claimCloudIdentity(name);
-    const ok = saveProfile(
-      { name, createdAt: state.profile?.createdAt || Date.now(), updatedAt: Date.now() },
-      { skipCloudSync: true }
-    );
+    const ok = saveProfile({ name, createdAt: state.profile?.createdAt || Date.now(), updatedAt: Date.now() });
     if (!ok) return;
-
     if (els.profileName) els.profileName.textContent = name;
     closeProfileModal(true);
     render({ skipSave: true });
 
+    const { merged, mergedCount } = await claimCloudIdentity(name);
     saveState({ immediate: true, reason: merged ? 'progress-restored' : 'profile-claimed' });
-    render({ skipSave: true });
+    render();
 
     const mod = await ensureCloudSync();
     if (mod && typeof mod.pushDeviceProfile === 'function') {
@@ -1563,8 +1903,9 @@ function clearLocalData() {
   clearInterval(interval);
   interval = null;
   releaseWakeLock();
-  saveState({ immediate: true, reason: 'local-data-cleared' });
-  render();
+  clearCloudQueue();
+  saveState({ immediate: true, reason: 'local-data-cleared', skipCloud: true });
+  render({ skipSave: true });
   showToast('Local data cleared');
   void refreshLeaderboard({ force: true });
 }
@@ -1579,14 +1920,80 @@ function setAnalyticsView(view) {
   renderAnalytics();
 }
 function sanitizeNumbers() {
-  state.focus = Math.max(10, Math.min(90, Number(state.focus) || 25));
-  state.shortBreak = Math.max(3, Math.min(30, Number(state.shortBreak) || 5));
-  state.longBreak = Math.max(5, Math.min(45, Number(state.longBreak) || 15));
-  state.roundsBeforeLong = Math.max(2, Math.min(8, Number(state.roundsBeforeLong) || 4));
+  state.focus = Math.max(1, Math.min(60, Number.isFinite(Number(state.focus)) ? Number(state.focus) : 25));
+  state.shortBreak = Math.max(1, Math.min(30, Number.isFinite(Number(state.shortBreak)) ? Number(state.shortBreak) : 5));
+  state.longBreak = Math.max(1, Math.min(45, Number.isFinite(Number(state.longBreak)) ? Number(state.longBreak) : 15));
+  state.roundsBeforeLong = Math.max(2, Math.min(8, Number.isFinite(Number(state.roundsBeforeLong)) ? Number(state.roundsBeforeLong) : 4));
+  state.noBreakMode = Boolean(state.noBreakMode);
+}
+function renderSettings() {
+  if (!els.settingsPage) return;
+  if (els.settingsFocusInput) els.settingsFocusInput.value = String(state.focus);
+  if (els.settingsShortBreakInput) els.settingsShortBreakInput.value = String(state.shortBreak);
+  if (els.settingsLongBreakInput) els.settingsLongBreakInput.value = String(state.longBreak);
+  if (els.settingsRoundsInput) els.settingsRoundsInput.value = String(state.roundsBeforeLong);
+  if (els.settingsNoBreakInput) els.settingsNoBreakInput.checked = Boolean(state.noBreakMode);
+  if (els.settingsAutoStartInput) els.settingsAutoStartInput.checked = Boolean(state.autoStart);
+  if (els.settingsSoundInput) els.settingsSoundInput.checked = Boolean(state.sound);
+  if (els.settingsPulseInput) els.settingsPulseInput.checked = Boolean(state.pulse);
+  document.querySelectorAll('.theme-card[data-theme]').forEach(card => {
+    card.classList.toggle('active', card.dataset.theme === (state.theme || 'nebula'));
+  });
+}
+function applySettingsFromUI() {
+  if (!els.settingsPage) return;
+  const parsedFocus = Number.parseInt(els.settingsFocusInput?.value, 10);
+  const parsedShort = Number.parseInt(els.settingsShortBreakInput?.value, 10);
+  const parsedLong = Number.parseInt(els.settingsLongBreakInput?.value, 10);
+  const parsedRounds = Number.parseInt(els.settingsRoundsInput?.value, 10);
+  const next = {
+    focus: Number.isFinite(parsedFocus) && parsedFocus >= 1 && parsedFocus <= 60 ? parsedFocus : state.focus,
+    shortBreak: Number.isFinite(parsedShort) && parsedShort >= 1 && parsedShort <= 30 ? parsedShort : state.shortBreak,
+    longBreak: Number.isFinite(parsedLong) && parsedLong >= 1 && parsedLong <= 45 ? parsedLong : state.longBreak,
+    roundsBeforeLong: Number.isFinite(parsedRounds) && parsedRounds >= 2 && parsedRounds <= 8 ? parsedRounds : state.roundsBeforeLong,
+    noBreakMode: Boolean(els.settingsNoBreakInput?.checked),
+    autoStart: Boolean(els.settingsAutoStartInput?.checked),
+    sound: Boolean(els.settingsSoundInput?.checked),
+    pulse: Boolean(els.settingsPulseInput?.checked)
+  };
+  const wasRunning = state.running;
+  state.focus = next.focus;
+  state.shortBreak = next.shortBreak;
+  state.longBreak = next.longBreak;
+  state.roundsBeforeLong = next.roundsBeforeLong;
+  state.noBreakMode = next.noBreakMode;
+  state.autoStart = next.autoStart;
+  state.sound = next.sound;
+  state.pulse = next.pulse;
+  if (!wasRunning && !state.pendingSession) {
+    state.total = secondsForMode(state.currentMode);
+    state.remaining = state.total;
+  }
+  saveState({ immediate: true, reason: 'settings-updated' });
+  render({ skipSave: true });
+}
+function resetSettingsToDefaults() {
+  state.focus = 25;
+  state.shortBreak = 5;
+  state.longBreak = 15;
+  state.roundsBeforeLong = 4;
+  state.noBreakMode = false;
+  state.autoStart = false;
+  state.sound = true;
+  state.pulse = true;
+  if (!state.running && !state.pendingSession) {
+    state.currentMode = 'focus';
+    state.total = secondsForMode('focus');
+    state.remaining = state.total;
+  }
+  saveState({ immediate: true, reason: 'settings-reset' });
+  render({ skipSave: true });
+  showToast('Settings reset');
 }
 
 cloudClientId = getCloudClientId();
 cloudQueue = loadCloudQueue();
+void refreshCloudGeneration({ force: true });
 
 function init() {
   state = normalizeState(state);
@@ -1598,22 +2005,26 @@ function init() {
   sanitizeNumbers();
   if (!state.total) state.total = secondsForMode(state.currentMode);
   if (!state.remaining) state.remaining = state.total;
-  if (state.page !== 'analytics') state.page = 'timer';
+  if (!['timer', 'analytics', 'settings', 'leaderboard', 'achievements'].includes(state.page)) state.page = 'timer';
   if (state.pendingSession) state.running = false;
   state.remaining = clamp(Number(state.remaining) || state.total, 0, state.total || secondsForMode(state.currentMode));
   state.total = Math.max(1, Number(state.total) || secondsForMode(state.currentMode));
 
   els.timerPage.classList.toggle('active', state.page === 'timer');
+  if (els.analyticsPage) els.analyticsPage.classList.toggle('active', state.page === 'analytics');
+  if (els.settingsPage) els.settingsPage.classList.toggle('active', state.page === 'settings');
+  if (els.leaderboardPage) els.leaderboardPage.classList.toggle('active', state.page === 'leaderboard');
+  if (els.achievementsPage) els.achievementsPage.classList.toggle('active', state.page === 'achievements');
   document.querySelectorAll('.drawer-item[data-page]').forEach(btn => btn.classList.toggle('active', btn.dataset.page === state.page));
-  els.analyticsPage.classList.toggle('active', state.page === 'analytics');
   document.querySelectorAll('.tab[data-analytics-view]').forEach(btn => btn.classList.toggle('active', btn.dataset.analyticsView === (state.analyticsView || 'weekly')));
 
   currentSubject = safeSubject(state.lastSubject);
   currentAnalyticsDetail = null;
   closeSessionModal();
+  applyTheme(state.theme);
   if (els.profileName) els.profileName.textContent = state.profile.name || 'Guest';
   ensureProfile();
-  render({ skipSave: true });
+  render();
 
   if (state.running) {
     if (!restoreTimerFromCheckpoint()) {
@@ -1646,19 +2057,19 @@ function init() {
 
   window.addEventListener('beforeunload', () => {
     saveTimerCheckpoint();
-    saveState({ skipCloudSync: true, touchUpdatedAt: false, reason: 'beforeunload' });
+    saveState({ immediate: true, reason: 'beforeunload' });
   });
 
   window.addEventListener('pagehide', () => {
     saveTimerCheckpoint();
-    saveState({ skipCloudSync: true, touchUpdatedAt: false, reason: 'pagehide' });
+    saveState({ immediate: true, reason: 'pagehide' });
     releaseWakeLock();
   });
 
   window.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
       saveTimerCheckpoint();
-      saveState({ skipCloudSync: true, touchUpdatedAt: false, reason: 'hidden' });
+      saveState({ immediate: true, reason: 'hidden' });
       return;
     }
     if (document.visibilityState === 'visible' && state.running) {
@@ -1731,24 +2142,24 @@ els.startPauseBtn.addEventListener('click', () => {
 els.skipBtn.addEventListener('click', () => {
   if (state.running) pauseTimer();
   if (state.pendingSession) {
-    advanceCycleAfterFocus(state.pendingSession.roundCompleted || state.cycleCount);
-    state.pendingSession = null;
-    closeSessionModal();
-    state.currentMode = 'focus';
-    state.remaining = state.focus * 60;
-    state.total = state.remaining;
-    timerPerfStamp = 0;
-    state.timerCheckpoint = null;
+    restorePendingSessionState();
     render();
     return;
   }
   if (state.currentMode === 'focus') {
     const completedRound = state.cycleCount;
-    const nextMode = nextBreakModeForRound(completedRound);
-    state.currentMode = nextMode;
-    state.remaining = secondsForMode(state.currentMode);
-    state.total = state.remaining;
-    advanceCycleAfterFocus(completedRound);
+    if (state.noBreakMode) {
+      state.cycleCount = Math.max(1, Number(state.cycleCount) || 1) + 1;
+      state.currentMode = 'focus';
+      state.remaining = secondsForMode('focus');
+      state.total = state.remaining;
+    } else {
+      const nextMode = nextBreakModeForRound(completedRound);
+      state.currentMode = nextMode;
+      state.remaining = secondsForMode(state.currentMode);
+      state.total = state.remaining;
+      advanceCycleAfterFocus(completedRound);
+    }
   } else {
     state.currentMode = 'focus';
     state.remaining = secondsForMode('focus');
@@ -1774,18 +2185,45 @@ els.logBtn.addEventListener('click', () => {
     openSessionModal();
     return;
   }
-  const wasFocus = state.currentMode === 'focus';
+  if (state.noBreakMode) {
+    if (state.running) pauseTimer();
+    const restoreState = createTimerSnapshot();
+    state.pendingSession = createPendingSession({
+      minutes: getContinuousSessionMinutes(),
+      nextMode: 'focus',
+      sessionDate: dkey(new Date()),
+      roundCompleted: Math.max(1, Number(state.cycleCount) || 1),
+      wasNoBreak: true,
+      restoreState
+    });
+    openSessionModal();
+    render();
+    return;
+  }
+  if (state.currentMode !== 'focus') {
+    showToast('Finish your break first, then log the focus session');
+    return;
+  }
   const completedRound = state.cycleCount;
-  const elapsedFocusMinutes = wasFocus
-    ? (state.remaining < state.total ? Math.max(1, Math.round((state.total - state.remaining) / 60)) : state.focus)
+  const elapsedFocusMinutes = state.remaining < state.total
+    ? Math.max(1, Math.round((state.total - state.remaining) / 60))
     : state.focus;
   if (state.running) pauseTimer();
-  state.pendingSession = {
+  const nextMode = nextBreakModeForRound(completedRound);
+  state.pendingSession = createPendingSession({
     minutes: elapsedFocusMinutes,
-    nextMode: nextBreakModeForRound(completedRound),
+    nextMode,
     sessionDate: dkey(new Date()),
-    roundCompleted: completedRound
-  };
+    roundCompleted: completedRound,
+    wasNoBreak: false,
+    restoreState: {
+      currentMode: nextMode,
+      remaining: secondsForMode(nextMode),
+      total: secondsForMode(nextMode),
+      cycleCount: completedRound,
+      running: false
+    }
+  });
   state.currentMode = state.pendingSession.nextMode;
   state.total = secondsForMode(state.currentMode);
   state.remaining = state.total;
@@ -1818,9 +2256,32 @@ els.subjectChips.forEach(btn => btn.addEventListener('click', () => {
 document.querySelectorAll('.tab[data-analytics-view]').forEach(btn => {
   btn.addEventListener('click', () => setAnalyticsView(btn.dataset.analyticsView));
 });
+if (els.settingsPage) {
+  [els.settingsFocusInput, els.settingsShortBreakInput, els.settingsLongBreakInput, els.settingsRoundsInput].forEach(input => {
+    if (!input) return;
+    input.addEventListener('change', applySettingsFromUI);
+    input.addEventListener('blur', applySettingsFromUI);
+  });
+  [els.settingsNoBreakInput, els.settingsAutoStartInput, els.settingsSoundInput, els.settingsPulseInput].forEach(input => {
+    if (!input) return;
+    input.addEventListener('change', applySettingsFromUI);
+  });
+  if (els.settingsResetBtn) els.settingsResetBtn.addEventListener('click', resetSettingsToDefaults);
+}
 if (els.closeAnalyticsSessionBtn) els.closeAnalyticsSessionBtn.addEventListener('click', closeAnalyticsSessionModal);
 if (els.closeAnalyticsSessionFooterBtn) els.closeAnalyticsSessionFooterBtn.addEventListener('click', closeAnalyticsSessionModal);
 if (els.deleteAnalyticsSessionBtn) els.deleteAnalyticsSessionBtn.addEventListener('click', handleAnalyticsSessionDelete);
+
+document.querySelectorAll('.theme-card[data-theme]').forEach(card => {
+  card.addEventListener('click', () => {
+    const t = card.dataset.theme;
+    if (t === state.theme) return;
+    applyTheme(t);
+    saveState({ immediate: true, reason: 'theme-changed' });
+    const names = { nebula: 'Nebula 🌌', ocean: 'Ocean 🌊', ember: 'Ember 🔥' };
+    showToast(`Theme: ${names[t] || t}`);
+  });
+});
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
@@ -1836,8 +2297,9 @@ function cleanupAndRefresh(options = {}) {
   updateStats();
   updateAchievements();
   if (state.page === 'analytics') renderAnalytics();
+  else if (state.page === 'settings') renderSettings();
   else renderTimerOnly();
-  if (!options.skipSave) saveState({ skipCloudSync: true, touchUpdatedAt: false, reason: 'cleanup-refresh' });
+  if (!options.skipSave) saveState();
 }
 init();
 cleanupAndRefresh({ skipSave: true });
@@ -1869,5 +2331,5 @@ function tick() {
 
   saveTimerCheckpoint();
   renderTimerOnly();
-  saveState({ skipCloudSync: true, touchUpdatedAt: false, reason: 'timer-tick' });
+  saveState();
 }
