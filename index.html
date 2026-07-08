@@ -177,7 +177,7 @@
         </div>
 
         <div class="card settings-card">
-          <div class="section-heading">
+          <div class="section-heading settings-tone settings-tone-violet">
             <h2>⏱ Timer durations</h2>
             <span>In minutes</span>
           </div>
@@ -185,32 +185,32 @@
           <div class="settings-grid">
             <label class="setting-field">
               <span>🎯 Pomodoro length</span>
-              <input id="settingsFocusInput" type="number" min="1" max="60" step="1" value="25" />
+              <input id="settingsFocusInput" type="range" min="1" max="60" step="1" value="25" />
               <small>1–60 minutes per focus round.</small>
             </label>
 
             <label class="setting-field">
               <span>☕ Short break</span>
-              <input id="settingsShortBreakInput" type="number" min="1" max="30" step="1" value="5" />
+              <input id="settingsShortBreakInput" type="range" min="1" max="30" step="1" value="5" />
               <small>Used in normal Pomodoro mode.</small>
             </label>
 
             <label class="setting-field">
               <span>🛋 Long break</span>
-              <input id="settingsLongBreakInput" type="number" min="1" max="45" step="1" value="15" />
+              <input id="settingsLongBreakInput" type="range" min="1" max="45" step="1" value="15" />
               <small>After completing a full round set.</small>
             </label>
 
             <label class="setting-field">
               <span>🔁 Rounds before long break</span>
-              <input id="settingsRoundsInput" type="number" min="2" max="8" step="1" value="4" />
+              <input id="settingsRoundsInput" type="range" min="2" max="8" step="1" value="4" />
               <small>Classic Pomodoro = 4 rounds.</small>
             </label>
           </div>
 
           <hr class="page-divider" />
 
-          <div class="section-heading">
+          <div class="section-heading settings-tone settings-tone-cyan">
             <h2>🎛 Behaviour</h2>
             <span>Toggle as needed</span>
           </div>
@@ -251,7 +251,7 @@
 
           <hr class="page-divider" />
 
-          <div class="section-heading">
+          <div class="section-heading settings-tone settings-tone-amber">
             <h2>🎨 Appearance</h2>
             <span>Pick a theme</span>
           </div>

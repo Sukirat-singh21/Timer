@@ -1,4 +1,4 @@
-const CACHE = 'jee-pomodoro-flow-v19-prestige';
+const CACHE = 'jee-pomodoro-flow-v21-menu-colors';
 const ASSETS = ['./', 'index.html', 'style.css', 'app.js', 'firebase.js', 'manifest.json', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', event => {
