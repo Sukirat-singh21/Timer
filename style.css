@@ -90,9 +90,9 @@ body {
   border: 1px solid rgba(148,163,184,.18);
   border-radius: 24px;
   padding: 12px 16px;
-  box-shadow: var(--shadow-md), inset 0 1px 0 rgba(255,255,255,.04);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 8px 18px rgba(0,0,0,.18);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   position: sticky;
   top: 14px;
   z-index: 20;
@@ -155,7 +155,7 @@ body {
 .chip:active, .tab:active { transform: scale(.97); }
 
 .icon-btn {
-  background: rgba(148,163,184,.10);
+  background: rgba(148,163,184,.06);
   border: 1px solid rgba(148,163,184,.16);
   min-width: 46px;
 }
@@ -163,7 +163,7 @@ body {
 .icon-btn.small { padding: 9px 12px; min-width: auto; }
 
 .ghost-btn {
-  background: rgba(148,163,184,.08);
+  background: rgba(148,163,184,.05);
   border: 1px solid rgba(148,163,184,.12);
 }
 .ghost-btn:hover { background: rgba(148,163,184,.14); }
@@ -174,22 +174,23 @@ body {
 .page { display: none; gap: 14px; }
 .page.active {
   display: grid;
-  animation: pageIn .38s cubic-bezier(.2,.8,.2,1) both;
+  animation: none;
 }
 
 /* Stagger cards in active page */
-.page.active > .card:nth-child(1) { animation-delay: 0ms;   animation: cardEntrance .4s cubic-bezier(.2,.8,.2,1) both; }
+.page.active > .card:nth-child(1) { animation-delay: 0ms;   animation: none; }
 .page.active > .card:nth-child(2) { animation-delay: 55ms;  animation: cardEntrance .4s cubic-bezier(.2,.8,.2,1) both 55ms; }
 .page.active > .card:nth-child(3) { animation-delay: 110ms; animation: cardEntrance .4s cubic-bezier(.2,.8,.2,1) both 110ms; }
 .page.active > .card:nth-child(4) { animation-delay: 165ms; animation: cardEntrance .4s cubic-bezier(.2,.8,.2,1) both 165ms; }
 
 /* ── Card base ───────────────────────────────────────────── */
 .card {
-  background: linear-gradient(160deg, rgba(15,22,44,.85), rgba(9,14,28,.80));
+  background: rgba(14,20,34,.96);
   border: 1px solid var(--border);
   border-radius: var(--r-xl);
-  box-shadow: var(--shadow);
-  box-shadow: var(--shadow), inset 0 1px 0 rgba(255,255,255,.03);
+  box-shadow: 0 10px 24px rgba(0,0,0,.22);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   position: relative;
   overflow: hidden;
 }
@@ -208,7 +209,7 @@ body {
 /* Page-header cards get an accent border glow */
 .page-header-card {
   border-color: var(--pa-border);
-  box-shadow: var(--shadow), 0 0 40px var(--pa-dim), inset 0 1px 0 rgba(255,255,255,.06);
+  box-shadow: 0 10px 24px rgba(0,0,0,.22);
 }
 
 .page-header-card::after {
@@ -285,7 +286,7 @@ body {
   height: 7px;
   border-radius: 50%;
   background: var(--pa);
-  animation: blipPulse 2s infinite;
+  box-shadow: 0 0 10px var(--pa);
 }
 
 .status-mini { color: var(--muted); font-weight: 700; font-size: .88rem; }
@@ -306,10 +307,10 @@ body {
 .ring-wrap::before {
   content: '';
   position: absolute;
-  inset: -20px;
-  background: radial-gradient(circle, var(--pa-glow) 0%, transparent 65%);
-  opacity: .5;
-  animation: glowBreath 4s ease-in-out infinite;
+  inset: -16px;
+  background: radial-gradient(circle, var(--pa-dim) 0%, transparent 68%);
+  opacity: .24;
+  animation: none;
   pointer-events: none;
 }
 
@@ -387,7 +388,7 @@ body {
 .primary:hover { box-shadow: 0 14px 36px rgba(109,40,217,.50); transform: translateY(-1px); filter: brightness(1.08); }
 
 .soft {
-  background: rgba(148,163,184,.10);
+  background: rgba(148,163,184,.06);
   border: 1px solid rgba(148,163,184,.16);
 }
 .soft:hover { background: rgba(148,163,184,.18); }
@@ -408,7 +409,7 @@ body {
 .summary-grid { display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0,1fr)); }
 
 .stat-card {
-  background: rgba(148,163,184,.07);
+  background: rgba(148,163,184,.05);
   border: 1px solid rgba(148,163,184,.11);
   border-radius: var(--r-lg);
   padding: 14px;
@@ -460,7 +461,7 @@ body {
 }
 
 .mini-stat {
-  background: rgba(148,163,184,.07);
+  background: rgba(148,163,184,.05);
   border: 1px solid rgba(148,163,184,.11);
   border-radius: var(--r-lg);
   padding: 14px;
@@ -480,7 +481,7 @@ body {
 .view-tabs { display: flex; gap: 10px; flex-wrap: wrap; }
 
 .tab {
-  background: rgba(148,163,184,.08);
+  background: rgba(148,163,184,.05);
   border: 1px solid rgba(148,163,184,.13);
   font-size: .9rem;
   transition: all .2s;
@@ -600,7 +601,7 @@ body {
   border-radius: 14px 14px 8px 8px;
   overflow: hidden;
   position: relative;
-  background: rgba(148,163,184,.08);
+  background: rgba(148,163,184,.05);
   border: 1px solid rgba(148,163,184,.12);
   display: flex;
   flex-direction: column-reverse;
@@ -863,6 +864,7 @@ body {
   transition: transform .22s ease, border-color .22s ease, box-shadow .22s ease, filter .22s ease;
   position: relative;
   overflow: hidden;
+  backdrop-filter: none;
 }
 
 .ach-item:hover {
@@ -898,8 +900,7 @@ body {
     linear-gradient(145deg, rgba(255,255,255,.06), var(--ach-soft) 36%, rgba(9,14,28,.78)),
     linear-gradient(145deg, rgba(255,255,255,.02), rgba(255,255,255,.00));
   border-color: var(--ach-ring);
-  box-shadow: 0 0 42px var(--ach-shadow), inset 0 1px 0 rgba(255,255,255,.08);
-  animation: achGlow 3.2s ease-in-out infinite;
+  box-shadow: 0 0 28px var(--ach-shadow), inset 0 1px 0 rgba(255,255,255,.08);
 }
 
 .ach-item.ach-just-unlocked {
@@ -1074,7 +1075,6 @@ body {
   border-radius: 50%;
   background: #10b981;
   box-shadow: 0 0 6px #10b981;
-  animation: liveBlip 1.8s ease-in-out infinite;
 }
 
 /* Podium */
@@ -1097,7 +1097,7 @@ body {
   padding: 20px 14px 16px;
   border-radius: 22px;
   border: 1px solid rgba(148,163,184,.14);
-  background: linear-gradient(180deg, rgba(148,163,184,.10), rgba(9,14,28,.80));
+  background: rgba(14,20,34,.96);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
   transition: transform .2s ease, box-shadow .2s ease;
 }
@@ -1115,14 +1115,14 @@ body {
 .podium-card.place-1 {
   min-height: 175px;
   transform: translateY(-10px);
-  background: linear-gradient(160deg, rgba(250,204,21,.22), rgba(234,179,8,.10), rgba(10,18,34,.90));
+  background: rgba(14,20,34,.96);
   border-color: rgba(250,204,21,.38);
   box-shadow: 0 0 32px rgba(250,204,21,.16), inset 0 1px 0 rgba(255,255,255,.07);
 }
 .podium-card.place-1:hover { transform: translateY(-14px); }
 .podium-card.place-2 {
   min-height: 155px;
-  background: linear-gradient(160deg, rgba(203,213,225,.18), rgba(148,163,184,.08), rgba(10,18,34,.90));
+  background: rgba(14,20,34,.96);
   border-color: rgba(203,213,225,.28);
 }
 .podium-card.place-3 {
@@ -1176,7 +1176,7 @@ body {
 /* Chip */
 .chip-row { display: flex; gap: 10px; flex-wrap: wrap; }
 .chip {
-  background: rgba(148,163,184,.08);
+  background: rgba(148,163,184,.05);
   border: 1px solid rgba(148,163,184,.13);
   font-size: .88rem;
   transition: all .2s;
@@ -1204,8 +1204,6 @@ body {
   position: fixed;
   inset: 0;
   background: rgba(2,6,20,.72);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
   z-index: 40;
   animation: fadeIn .25s ease both;
 }
@@ -1218,14 +1216,14 @@ body {
   max-height: calc(100vh - 28px);
   overflow-y: auto;
   z-index: 50;
-  background: linear-gradient(180deg, rgba(13,20,42,.99), rgba(8,12,24,.99));
+  background: rgba(10,16,28,.98);
   border: 1px solid rgba(148,163,184,.20);
   border-radius: 28px;
-  box-shadow: 0 32px 96px rgba(0,0,0,.65);
+  box-shadow: 0 10px 24px rgba(0,0,0,.22);
   padding: 18px;
   display: grid;
   gap: 10px;
-  animation: drawerSlide .3s cubic-bezier(.2,.8,.2,1) both;
+  animation: none;
 }
 
 .drawer-head {
@@ -1338,7 +1336,7 @@ body {
 
 .drawer-separator {
   height: 1px;
-  background: rgba(148,163,184,.10);
+  background: rgba(148,163,184,.06);
   margin: 2px 0;
 }
 
@@ -1359,8 +1357,6 @@ body {
   position: fixed;
   inset: 0;
   background: rgba(2,6,18,.65);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
   display: grid;
   place-items: center;
   padding: 18px;
@@ -1449,31 +1445,14 @@ body {
   to   { transform: scaleY(1);   opacity: 1; }
 }
 
-@keyframes shimmerSweep {
-  0%   { background-position: -200% center; }
-  60%  { background-position: 200% center; }
-  100% { background-position: 200% center; }
-}
 
-@keyframes liveBlip {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50%       { opacity: .4; transform: scale(.7); }
-}
 
 @keyframes glowBreath {
   0%, 100% { opacity: .4; transform: scale(1); }
   50%       { opacity: .65; transform: scale(1.06); }
 }
 
-@keyframes blipPulse {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: .4; }
-}
 
-@keyframes achGlow {
-  0%, 100% { box-shadow: 0 0 36px rgba(251,191,36,.14), inset 0 1px 0 rgba(255,255,255,.07); }
-  50%       { box-shadow: 0 0 54px rgba(251,191,36,.26), inset 0 1px 0 rgba(255,255,255,.09); }
-}
 
 @keyframes iconBob {
   0%   { transform: scale(.8) rotate(-8deg); opacity: 0; }
@@ -1569,7 +1548,7 @@ body {
 }
 
 .theme-card {
-  background: rgba(148,163,184,.07);
+  background: rgba(148,163,184,.05);
   border: 2px solid rgba(148,163,184,.12);
   border-radius: 20px;
   padding: 14px 10px 12px;
@@ -1860,19 +1839,18 @@ body::before {
   transition-property: background, background-color, border-color, box-shadow, color, filter, transform, opacity;
   transition-duration: .42s;
   transition-timing-function: ease;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .topbar,
 .drawer {
   isolation: isolate;
-  background:
-    linear-gradient(180deg, rgba(13,19,36,.80), rgba(7,11,22,.88)),
-    var(--glass-noise);
-  background-blend-mode: normal, soft-light;
+  background: rgba(10,16,28,.98);
   border-color: rgba(255,255,255,.09);
   box-shadow:
-    0 24px 68px rgba(0,0,0,.48),
-    0 0 24px var(--pa-dim),
+    0 24px 72px rgba(0,0,0,.50),
+    0 0 30px var(--pa-dim),
     inset 1px 1px rgba(255,255,255,.06),
     inset -1px -1px rgba(0,0,0,.24);
 }
@@ -1925,13 +1903,15 @@ body::before {
 .achievements-grid-card,
 .achievements-info-card,
 .about-box {
-  background: linear-gradient(160deg, rgba(15,22,44,.80), rgba(8,13,28,.74));
+  background: linear-gradient(160deg, rgba(15,22,44,.78), rgba(8,13,28,.72));
   border-color: rgba(255,255,255,.08);
   box-shadow:
-    0 18px 50px rgba(0,0,0,.42),
-    0 0 18px var(--pa-dim),
-    inset 1px 1px rgba(255,255,255,.05),
-    inset -1px -1px rgba(0,0,0,.22);
+    0 14px 34px rgba(0,0,0,.34),
+    0 0 12px var(--pa-dim),
+    inset 1px 1px rgba(255,255,255,.04),
+    inset -1px -1px rgba(0,0,0,.18);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .card::before {
@@ -1939,21 +1919,6 @@ body::before {
   opacity: .95;
 }
 
-.card::after,
-.graph-wrap::after,
-.analytics-detail::after,
-.achievements-grid-card::after,
-.achievements-info-card::after,
-.about-box::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  background: linear-gradient(135deg, rgba(255,255,255,.06), transparent 34%, rgba(255,255,255,.03) 62%, transparent 100%);
-  opacity: .45;
-  z-index: 0;
-}
 
 .hero,
 .page-header-card,
@@ -1963,17 +1928,13 @@ body::before {
 .settings-header {
   background:
     radial-gradient(circle at 18% 0%, var(--pa-dim), transparent 42%),
-    linear-gradient(160deg, rgba(19,28,52,.90), rgba(9,14,28,.76)),
-    var(--glass-noise);
-  background-blend-mode: normal, normal, soft-light;
+    linear-gradient(160deg, rgba(19,28,52,.90), rgba(9,14,28,.76));
   border-color: var(--pa-border);
   box-shadow:
-    0 22px 62px rgba(0,0,0,.52),
-    0 0 36px var(--pa-dim),
-    inset 1px 1px rgba(255,255,255,.08),
-    inset -1px -1px rgba(0,0,0,.26);
-  backdrop-filter: blur(22px);
-  -webkit-backdrop-filter: blur(22px);
+    0 18px 42px rgba(0,0,0,.42),
+    0 0 18px var(--pa-dim),
+    inset 1px 1px rgba(255,255,255,.06),
+    inset -1px -1px rgba(0,0,0,.22);
 }
 
 .hero::before,
@@ -2014,13 +1975,13 @@ body::before {
 .tab,
 .status-pill,
 .mini-line {
-  background: linear-gradient(160deg, rgba(148,163,184,.08), rgba(9,14,28,.76));
+  background: linear-gradient(160deg, rgba(148,163,184,.08), rgba(9,14,28,.74));
   border-color: rgba(255,255,255,.08);
   box-shadow:
-    0 10px 24px rgba(0,0,0,.28),
-    0 0 10px var(--pa-dim),
+    0 10px 22px rgba(0,0,0,.26),
+    0 0 8px var(--pa-dim),
     inset 1px 1px rgba(255,255,255,.04),
-    inset -1px -1px rgba(0,0,0,.14);
+    inset -1px -1px rgba(0,0,0,.12);
 }
 
 .stat-card:hover,
@@ -2081,10 +2042,10 @@ body::before {
 .stat-card,
 .mini-stat {
   box-shadow:
-    0 12px 28px rgba(0,0,0,.30),
-    0 0 16px var(--pa-dim),
+    0 10px 22px rgba(0,0,0,.26),
+    0 0 10px var(--pa-dim),
     inset 1px 1px rgba(255,255,255,.04),
-    inset -1px -1px rgba(0,0,0,.14);
+    inset -1px -1px rgba(0,0,0,.12);
 }
 
 .mini-stat:hover,
@@ -2095,10 +2056,10 @@ body::before {
 .ach-item,
 .podium-card {
   box-shadow:
-    0 14px 34px rgba(0,0,0,.34),
-    0 0 16px var(--pa-dim),
+    0 12px 28px rgba(0,0,0,.30),
+    0 0 10px var(--pa-dim),
     inset 1px 1px rgba(255,255,255,.05),
-    inset -1px -1px rgba(0,0,0,.16);
+    inset -1px -1px rgba(0,0,0,.14);
 }
 
 .drawer-item,
@@ -2107,10 +2068,10 @@ body::before {
 .status-pill,
 .mini-line {
   box-shadow:
-    0 10px 24px rgba(0,0,0,.24),
-    0 0 10px var(--pa-dim),
+    0 8px 18px rgba(0,0,0,.20),
+    0 0 8px var(--pa-dim),
     inset 1px 1px rgba(255,255,255,.04),
-    inset -1px -1px rgba(0,0,0,.12);
+    inset -1px -1px rgba(0,0,0,.10);
 }
 
 /* Unified page-accent interactions */
@@ -2239,7 +2200,6 @@ body.theme-ember .topbar::before {
   border-radius: 50%;
   background: var(--pa);
   box-shadow: 0 0 10px var(--pa);
-  animation: blipPulse 2s infinite;
 }
 
 
@@ -2279,7 +2239,6 @@ body.theme-ember .topbar::before {
     color var(--motion-fast) ease,
     filter var(--motion-fast) ease,
     opacity var(--motion-fast) ease;
-  
 }
 
 @media (hover: hover) {
@@ -2353,36 +2312,6 @@ body.theme-ember .topbar::before {
   isolation: isolate;
 }
 
-.ring-wrap::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: 0;
-  background:
-    conic-gradient(from 0deg,
-      transparent 0deg,
-      rgba(255,255,255,.05) 26deg,
-      transparent 54deg,
-      rgba(255,255,255,.08) 90deg,
-      transparent 122deg,
-      rgba(255,255,255,.03) 170deg,
-      transparent 240deg,
-      rgba(255,255,255,.05) 292deg,
-      transparent 360deg);
-  -webkit-mask:
-    radial-gradient(circle, transparent 63%, #000 64% 71%, transparent 72%);
-          mask:
-    radial-gradient(circle, transparent 63%, #000 64% 71%, transparent 72%);
-  opacity: .14;
-  filter: blur(.15px) saturate(1.08);
-  animation:
-    ringDrift var(--motion-slow) linear infinite,
-    ringFade 6.2s var(--motion-ease) infinite;
-
-}
-
 .ring-wrap::before {
   animation-duration: 5.8s;
   animation-timing-function: var(--motion-ease);
@@ -2393,7 +2322,6 @@ body.theme-ember .topbar::before {
   z-index: 1;
 }
 .ring svg {
-  animation: ringHueFloat 58s linear infinite;
   transform-origin: 50% 50%;
 }
 
@@ -2531,7 +2459,7 @@ body.theme-ember .topbar::before {
     0 0 12px var(--pa-dim),
     inset 1px 1px rgba(255,255,255,.06),
     inset -1px -1px rgba(0,0,0,.14);
-  animation: achAmbient 12s var(--motion-ease) infinite;
+  animation: none;
 }
 
 .ach-item.ach-locked {
@@ -2546,11 +2474,9 @@ body.theme-ember .topbar::before {
   pointer-events: none;
   background: linear-gradient(110deg,
     transparent 30%,
-    rgba(255,255,255,.12) 48%,
+    rgba(255,255,255,.10) 48%,
     transparent 66%);
-  background-size: 220% 100%;
-  animation: shimmerSweep 14s linear infinite;
-  opacity: .40;
+  opacity: .20;
 }
 
 .ach-icon,
@@ -2574,9 +2500,7 @@ body.theme-ember .topbar::before {
   position: absolute;
   inset: 0;
   background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,.18) 48%, transparent 68%);
-  opacity: .22;
-  transform: translateX(-130%);
-  animation: progressSheen 4.5s var(--motion-ease) infinite;
+  opacity: .12;
   pointer-events: none;
 }
 
@@ -2615,7 +2539,7 @@ body.theme-ember .topbar::before {
     transparent 66%);
   background-size: 220% 100%;
   opacity: .26;
-  animation: podiumShimmer 10s linear infinite;
+  animation: none;
 }
 
 .podium-card.place-1 {
@@ -2688,51 +2612,12 @@ body.theme-ember .topbar::before {
 }
 
 /* Keep the animation vocabulary very calm */
-@keyframes ringDrift {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
 
-@keyframes ringFade {
-  0%, 100% { opacity: .10; }
-  50% { opacity: .18; }
-}
 
-@keyframes ringHueFloat {
-  0%, 100% { filter: drop-shadow(0 0 18px var(--pa-glow)); }
-  50% { filter: drop-shadow(0 0 22px rgba(255,255,255,.10)); }
-}
 
-@keyframes achAmbient {
-  0%, 100% { box-shadow:
-    0 16px 38px rgba(0,0,0,.36),
-    0 0 18px rgba(251,191,36,.18),
-    0 0 12px var(--pa-dim),
-    inset 1px 1px rgba(255,255,255,.06),
-    inset -1px -1px rgba(0,0,0,.14); }
-  50% { box-shadow:
-    0 18px 42px rgba(0,0,0,.38),
-    0 0 24px rgba(251,191,36,.22),
-    0 0 16px var(--pa-dim),
-    inset 1px 1px rgba(255,255,255,.07),
-    inset -1px -1px rgba(0,0,0,.14); }
-}
 
-@keyframes shimmerSweep {
-  0% { background-position: 0% 0; }
-  100% { background-position: 220% 0; }
-}
 
-@keyframes podiumShimmer {
-  0% { background-position: -140% 0; opacity: .18; }
-  60% { opacity: .28; }
-  100% { background-position: 140% 0; opacity: .18; }
-}
 
-@keyframes progressSheen {
-  0% { transform: translateX(-130%); }
-  100% { transform: translateX(130%); }
-}
 
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -2915,19 +2800,16 @@ body.theme-ember .topbar::before {
   border-color: rgba(251,191,36,.52);
   box-shadow:
     var(--shadow-md),
-    0 0 28px rgba(251,191,36,.14),
+    0 0 20px rgba(251,191,36,.12),
     inset 0 1px 0 rgba(255,255,255,.10),
     inset 1px 1px 0 rgba(255,255,255,.04),
     inset -1px -1px 0 rgba(0,0,0,.14);
-  animation: achRewardGlow 9s ease-in-out infinite;
 }
 
 #achievementsPage .ach-item.ach-unlocked::after {
   background:
-    linear-gradient(125deg, transparent 28%, rgba(255,255,255,.16) 44%, transparent 60%);
-  background-size: 240% 100%;
-  animation: prestigeSweep 16s linear 1;
-  opacity: .38;
+    linear-gradient(125deg, transparent 28%, rgba(255,255,255,.12) 44%, transparent 60%);
+  opacity: .22;
 }
 
 #achievementsPage .ach-item.ach-unlocked .ach-icon {
@@ -3061,16 +2943,6 @@ body.theme-ember .topbar::before {
     linear-gradient(315deg, rgba(0,0,0,.18), transparent 58%);
 }
 
-#leaderboardPage .podium-card::after {
-  content: '';
-  position: absolute;
-  inset: -45% -35%;
-  background: linear-gradient(110deg, transparent 38%, rgba(255,255,255,.16) 50%, transparent 62%);
-  transform: translateX(-72%) skewX(-10deg);
-  opacity: .22;
-  animation: podiumShimmer 18s linear infinite;
-  pointer-events: none;
-}
 
 #leaderboardPage .podium-card:hover {
   transform: translateY(-4px);
@@ -3225,41 +3097,8 @@ body.theme-ember .topbar::before {
   }
 }
 
-@keyframes achRewardGlow {
-  0%, 100% {
-    box-shadow:
-      var(--shadow-md),
-      0 0 18px rgba(251,191,36,.12),
-      inset 0 1px 0 rgba(255,255,255,.10),
-      inset -1px -1px 0 rgba(0,0,0,.14);
-  }
-  50% {
-    box-shadow:
-      var(--shadow-md),
-      0 0 24px rgba(251,191,36,.16),
-      inset 0 1px 0 rgba(255,255,255,.12),
-      inset -1px -1px 0 rgba(0,0,0,.12);
-  }
-}
 
-@keyframes prestigeSweep {
-  0%   { background-position: -120% 0; }
-  100% { background-position: 220% 0; }
-}
 
-@keyframes podiumShimmer {
-  0% {
-    transform: translateX(-72%) skewX(-10deg);
-    opacity: .06;
-  }
-  42% {
-    opacity: .18;
-  }
-  100% {
-    transform: translateX(72%) skewX(-10deg);
-    opacity: .06;
-  }
-}
 
 
 /* ══════════════════════════════════════════════════════════
@@ -3596,245 +3435,4 @@ body.theme-ember .topbar::before {
   line-height: 1.2;
 }
 
-/* ══════════════════════════════════════════════════════════
-   PERFORMANCE TRIM — simplified glass for weak devices
-   Keeps the premium look but removes the heaviest paint costs.
-   ══════════════════════════════════════════════════════════ */
-.topbar,
-.drawer,
-.hero,
-.page-header-card,
-.analytics-header,
-.achievements-header,
-.leaderboard-header,
-.settings-header,
-.card,
-.graph-wrap,
-.analytics-detail,
-.achievements-grid-card,
-.achievements-info-card,
-.about-box,
-.stat-card,
-.mini-stat,
-.ach-item,
-.podium-card,
-.drawer-item,
-.chip,
-.tab,
-.status-pill,
-.mini-line,
-#leaderboardPage .leaderboard-row,
-#leaderboardPage .leaderboard-podium-card,
-#leaderboardPage .leaderboard-list-card,
-#settingsPage .settings-card,
-#settingsPage .setting-field,
-#settingsPage .toggle-row,
-#settingsPage .theme-card {
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  background-blend-mode: normal !important;
-}
 
-.topbar,
-.drawer {
-  background: linear-gradient(180deg, rgba(13,19,36,.90), rgba(7,11,22,.95)) !important;
-  box-shadow:
-    0 14px 34px rgba(0,0,0,.42),
-    0 0 14px rgba(139,92,246,.10),
-    inset 0 1px 0 rgba(255,255,255,.05) !important;
-}
-
-.topbar::before,
-.drawer::before {
-  filter: none !important;
-  opacity: .24 !important;
-}
-
-.card,
-.graph-wrap,
-.analytics-detail,
-.achievements-grid-card,
-.achievements-info-card,
-.about-box {
-  background: linear-gradient(160deg, rgba(15,22,44,.88), rgba(8,13,28,.82)) !important;
-  box-shadow:
-    0 12px 30px rgba(0,0,0,.34),
-    inset 0 1px 0 rgba(255,255,255,.04) !important;
-}
-
-.hero,
-.page-header-card,
-.analytics-header,
-.achievements-header,
-.leaderboard-header,
-.settings-header {
-  background:
-    radial-gradient(circle at 18% 0%, var(--pa-dim), transparent 42%),
-    linear-gradient(160deg, rgba(19,28,52,.94), rgba(9,14,28,.84)) !important;
-  box-shadow:
-    0 16px 42px rgba(0,0,0,.42),
-    0 0 14px var(--pa-dim),
-    inset 0 1px 0 rgba(255,255,255,.06) !important;
-}
-
-.hero::before,
-.page-header-card::before,
-.analytics-header::before,
-.achievements-header::before,
-.leaderboard-header::before,
-.settings-header::before,
-.card::before,
-.graph-wrap::before,
-.analytics-detail::before,
-.achievements-grid-card::before,
-.achievements-info-card::before,
-.about-box::before,
-.stat-card::before,
-.mini-stat::before,
-.drawer-item::before,
-.chip::before,
-.tab::before,
-.status-pill::before,
-.mini-line::before,
-.ach-item::before,
-.podium-card::before {
-  opacity: .55 !important;
-}
-
-.stat-card,
-.mini-stat,
-.ach-item,
-.podium-card,
-.drawer-item,
-.chip,
-.tab,
-.status-pill,
-.mini-line {
-  background: linear-gradient(160deg, rgba(148,163,184,.08), rgba(9,14,28,.78)) !important;
-  box-shadow:
-    0 8px 20px rgba(0,0,0,.26),
-    inset 0 1px 0 rgba(255,255,255,.035) !important;
-}
-
-.stat-card:hover,
-.mini-stat:hover,
-.ach-item:hover,
-.podium-card:hover,
-.drawer-item:hover,
-.chip:hover,
-.tab:hover,
-.status-pill:hover,
-.mini-line:hover {
-  box-shadow:
-    0 12px 24px rgba(0,0,0,.30),
-    inset 0 1px 0 rgba(255,255,255,.045) !important;
-}
-
-.page-header-card,
-.analytics-header,
-.achievements-header,
-.leaderboard-header,
-.settings-header {
-  border-color: var(--pa-border) !important;
-}
-
-.page-header-card::after,
-.hero::after,
-.analytics-header::after,
-.achievements-header::after,
-.leaderboard-header::after,
-.settings-header::after {
-  height: 3px !important;
-  opacity: .72 !important;
-}
-
-#achievementsPage .ach-item.ach-unlocked {
-  animation: none !important;
-  box-shadow:
-    0 12px 28px rgba(0,0,0,.30),
-    0 0 16px rgba(251,191,36,.12),
-    inset 0 1px 0 rgba(255,255,255,.08) !important;
-}
-
-#achievementsPage .ach-item.ach-unlocked::after,
-#achievementsPage .ach-progress-bar::after,
-#leaderboardPage .podium-card::after {
-  animation: none !important;
-  opacity: .18 !important;
-}
-
-#achievementsPage .ach-progress-bar,
-#leaderboardPage .leaderboard-row {
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.03) !important;
-}
-
-#leaderboardPage .leaderboard-podium-card,
-#leaderboardPage .leaderboard-list-card {
-  box-shadow:
-    0 12px 30px rgba(0,0,0,.34),
-    inset 0 1px 0 rgba(255,255,255,.04) !important;
-}
-
-#leaderboardPage .podium-card {
-  box-shadow:
-    0 12px 28px rgba(0,0,0,.30),
-    inset 0 1px 0 rgba(255,255,255,.06) !important;
-}
-
-#leaderboardPage .podium-card.place-1,
-#leaderboardPage .podium-card.place-2,
-#leaderboardPage .podium-card.place-3 {
-  box-shadow:
-    0 12px 28px rgba(0,0,0,.30),
-    inset 0 1px 0 rgba(255,255,255,.06) !important;
-}
-
-#settingsPage .settings-header,
-#settingsPage .settings-card {
-  box-shadow:
-    0 12px 30px rgba(0,0,0,.34),
-    0 0 10px rgba(245,158,11,.06),
-    inset 0 1px 0 rgba(255,255,255,.04) !important;
-}
-
-#settingsPage .setting-field,
-#settingsPage .toggle-row,
-#settingsPage .theme-card {
-  box-shadow:
-    0 8px 18px rgba(0,0,0,.22),
-    inset 0 1px 0 rgba(255,255,255,.03) !important;
-}
-
-#settingsPage .setting-field:hover,
-#settingsPage .toggle-row:hover,
-#settingsPage .theme-card:hover {
-  box-shadow:
-    0 10px 22px rgba(0,0,0,.25),
-    inset 0 1px 0 rgba(255,255,255,.04) !important;
-}
-
-#settingsPage .setting-field input[type="range"]::-webkit-slider-thumb,
-#settingsPage .setting-field input[type="range"]::-moz-range-thumb {
-  box-shadow: 0 3px 8px rgba(0,0,0,.22) !important;
-}
-
-@media (max-width: 520px) {
-  .topbar,
-  .drawer,
-  .hero,
-  .page-header-card,
-  .analytics-header,
-  .achievements-header,
-  .leaderboard-header,
-  .settings-header,
-  .card,
-  .graph-wrap,
-  .analytics-detail,
-  .achievements-grid-card,
-  .achievements-info-card,
-  .about-box {
-    box-shadow:
-      0 10px 24px rgba(0,0,0,.28),
-      inset 0 1px 0 rgba(255,255,255,.035) !important;
-  }
-}
