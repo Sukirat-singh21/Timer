@@ -89,6 +89,8 @@ const els = {
   achMadeBy: $('achMadeBy'),
   achJee: $('achJee'),
   achEnayat: $('achEnayat'),
+  achievementsList: $('achievementsList'),
+  achTotalCount: $('achTotalCount'),
   achUnlockedCount: $('achUnlockedCount'),
   achEnayatFill: $('achEnayatFill'),
   achEnayatLabel: $('achEnayatLabel'),
@@ -122,10 +124,21 @@ const defaultState = {
   updatedAt: 0,
   aboutPulseShown: false,
   profile: { name: '', createdAt: 0, updatedAt: 0 },
-  achievements: { madeBy: true, jee: true, enayat: false },
+  achievements: {
+    madeBy: true,
+    jee: true,
+    firstSpark: false,
+    momentum: false,
+    triadSync: false,
+    focusForge: false,
+    streakFlame: false,
+    noBreakBeast: false,
+    enayat: false
+  },
   theme: 'nebula'
 };
 
+let cloudLastAppliedAt = 0;
 let state = loadState();
 let interval = null;
 let wakeLock = null;
@@ -142,13 +155,13 @@ let cloudSyncTimer = null;
 let cloudRetryTimer = null;
 let cloudSyncInFlight = false;
 let cloudSyncRequested = false;
-let cloudLastAppliedAt = 0;
 let cloudGeneration = { stateGeneration: 0, leaderboardGeneration: 0, updatedAt: 0, exists: false };
 let cloudQueue = null;
 let cloudClientId = null;
 let leaderboardRows = [];
 let profileModalBusy = false;
 let profileHydrationStarted = false;
+let achievementFlashIds = new Set();
 
 function loadState() {
   try {
@@ -163,7 +176,8 @@ function loadState() {
     const parsed = JSON.parse(raw);
     cloudLastAppliedAt = Number(parsed.updatedAt || 0) || 0;
     return normalizeState({ ...cloneDefaultState(), ...parsed });
-  } catch {
+  } catch (error) {
+    console.warn('[Pomodoro] loadState failed, falling back to defaults:', error);
     return cloneDefaultState();
   }
 }
@@ -224,8 +238,15 @@ function cloneDefaultState() {
 function getCloudSafeState() {
   const snapshot = cloneDefaultState();
   Object.assign(snapshot, state);
-  snapshot.timerCheckpoint = state.timerCheckpoint ? { ...state.timerCheckpoint } : null;
-  snapshot.pendingSession = state.pendingSession ? { ...state.pendingSession } : null;
+  // Strip live-timer fields — these are device-local and ephemeral.
+  // Pushing them to Firestore caused cloud pulls on reload to overwrite
+  // the locally-restored checkpoint with a stale mid-tick snapshot,
+  // making the countdown visibly jump or appear to reset.
+  snapshot.running = false;
+  snapshot.timerCheckpoint = null;
+  snapshot.pendingSession = null;
+  snapshot.remaining = secondsForMode(snapshot.currentMode);
+  snapshot.total = secondsForMode(snapshot.currentMode);
   snapshot.records = getRecords().map(record => ({ ...record }));
   snapshot.analyticsSelections = { ...(state.analyticsSelections || { weekly: -1, monthly: -1 }) };
   snapshot.achievements = { ...(state.achievements || cloneDefaultState().achievements) };
@@ -502,7 +523,26 @@ function applyCloudSnapshot(remoteState, remoteUpdatedAt, source = 'remote') {
   const nextUpdatedAt = Number(remoteUpdatedAt || remoteState.updatedAt || 0) || 0;
   if (nextUpdatedAt <= currentUpdatedAt) return false;
   const mergedRecords = mergeRecordsUnion(getRecords(), Array.isArray(remoteState.records) ? remoteState.records : []);
+
+  // Preserve local ephemeral timer state before merging — cloud pulls must
+  // never clobber a running timer. Only durable data (records, settings,
+  // profile, achievements, theme) should come from the cloud snapshot.
+  const localTimer = {
+    running: state.running,
+    remaining: state.remaining,
+    total: state.total,
+    currentMode: state.currentMode,
+    cycleCount: state.cycleCount,
+    timerCheckpoint: state.timerCheckpoint,
+    pendingSession: state.pendingSession,
+    page: state.page,
+  };
+
   state = normalizeState({ ...cloneDefaultState(), ...remoteState, records: mergedRecords });
+
+  // Restore timer state — cloud must not disturb the local running timer
+  Object.assign(state, localTimer);
+
   state.updatedAt = nextUpdatedAt;
   cloudLastAppliedAt = nextUpdatedAt;
   try {
@@ -938,6 +978,9 @@ function setPage(page) {
   if (els.leaderboardPage) els.leaderboardPage.classList.toggle('active', state.page === 'leaderboard');
   if (els.achievementsPage) els.achievementsPage.classList.toggle('active', state.page === 'achievements');
   document.querySelectorAll('.drawer-item[data-page]').forEach(btn => btn.classList.toggle('active', btn.dataset.page === state.page));
+  if (state.page === 'achievements') {
+    revealAchievementsOnOpen();
+  }
   saveState();
   closeDrawer();
   render();
@@ -961,10 +1004,6 @@ function updateTodaySummary() {
   els.todayBreakdown.innerHTML = SUBJECTS.map(s => `
     <div class="mini-line"><span>${s}</span><strong>${minutesToHuman(bySubject[s] || 0)} · ${questionsBySubject[s] || 0} q</strong></div>
   `).join('');
-
-  const todayQuestions = questions;
-  const enayatUnlocked = todayQuestions >= 100;
-  state.achievements.enayat = enayatUnlocked;
 
   state.streak = computeCurrentStreak(getRecords());
   renderAchievements();
@@ -1116,10 +1155,11 @@ function render(options = {}) {
     ? (state.noBreakMode ? `Cycle ${state.cycleCount}` : `Round ${state.cycleCount} of ${state.roundsBeforeLong}`)
     : modeName(state.currentMode);
   els.startPauseBtn.textContent = running ? 'Pause' : 'Start';
-  const logAllowed = Boolean(state.pendingSession || state.currentMode === 'focus');
+  const hasFocusProgress = state.currentMode === 'focus' && (state.running || state.pendingSession || Number(state.remaining) < Number(state.total));
+  const logAllowed = Boolean(state.pendingSession || hasFocusProgress);
   els.logBtn.disabled = !logAllowed;
   els.logBtn.style.opacity = logAllowed ? '' : '0.38';
-  els.logBtn.title = logAllowed ? '' : 'Log Session is only available during a focus round';
+  els.logBtn.title = logAllowed ? '' : 'Start the focus timer before logging a session';
   els.statusPill.textContent = running ? 'Locked in' : (
     state.pendingSession ? 'Log session' :
     (state.noBreakMode && state.currentMode === 'focus' ? 'Continuous study' :
@@ -1174,6 +1214,52 @@ function saveTimerCheckpoint() {
   }
 }
 
+function advanceNoBreakTimerFromCheckpoint(elapsedWall) {
+  const checkpoint = state.timerCheckpoint;
+  if (!checkpoint || state.currentMode !== 'focus') return false;
+
+  const total = Math.max(1, Number(checkpoint.total) || state.total || secondsForMode('focus'));
+  let cycleCount = Math.max(1, Number.parseInt(checkpoint.cycleCount, 10) || state.cycleCount || 1);
+  let remaining = Math.max(0, Number(checkpoint.remaining) || state.remaining || total);
+  let elapsed = Math.max(0, Math.floor(Number(elapsedWall) || 0));
+
+  // If the timer hit 00:00 before the checkpoint was saved, advance into the
+  // next continuous focus block immediately. In no-break mode there is no
+  // break screen to land on, so the next cycle should start automatically.
+  if (remaining <= 0) {
+    cycleCount += 1;
+    remaining = total;
+  }
+
+  if (elapsed > 0) {
+    if (elapsed >= remaining) {
+      elapsed -= remaining;
+      cycleCount += 1;
+      const extraCycles = Math.floor(elapsed / total);
+      cycleCount += extraCycles;
+      elapsed %= total;
+      remaining = total - elapsed;
+      if (remaining <= 0 || remaining > total) remaining = total;
+    } else {
+      remaining -= elapsed;
+    }
+  }
+
+  state.currentMode = 'focus';
+  state.cycleCount = cycleCount;
+  state.total = total;
+  state.remaining = remaining;
+  checkpoint.wallClock = Date.now();
+  checkpoint.mode = 'focus';
+  checkpoint.total = total;
+  checkpoint.remaining = remaining;
+  checkpoint.cycleCount = cycleCount;
+
+  timerPerfStamp = performance.now();
+  if (!interval) interval = setInterval(tick, 1000);
+  return true;
+}
+
 function restoreTimerFromCheckpoint() {
   if (!state.running) return false;
   if (!state.timerCheckpoint || typeof state.timerCheckpoint.wallClock !== 'number') {
@@ -1186,6 +1272,12 @@ function restoreTimerFromCheckpoint() {
   state.cycleCount = state.timerCheckpoint.cycleCount || state.cycleCount;
   state.total = Math.max(1, Number(state.timerCheckpoint.total) || state.total);
   const elapsedWall = Math.floor((Date.now() - state.timerCheckpoint.wallClock) / 1000);
+
+  if (state.noBreakMode && state.timerCheckpoint.mode === 'focus') {
+    advanceNoBreakTimerFromCheckpoint(elapsedWall);
+    return true;
+  }
+
   if (elapsedWall > 0) {
     state.remaining = Math.max(0, (Number(state.timerCheckpoint.remaining) || state.remaining) - elapsedWall);
     state.timerCheckpoint.wallClock = Date.now();
@@ -1202,7 +1294,9 @@ function restoreTimerFromCheckpoint() {
     completeTimerCycle();
     return true;
   }
-  return false;
+  // Return true — a checkpoint was found and applied. Callers can skip
+  // redundant interval setup; the interval is already running above.
+  return true;
 }
 
 function completeTimerCycle() {
@@ -1407,11 +1501,24 @@ function closeSessionModal() {
   els.sessionModal.classList.add('hidden');
   els.sessionModal.setAttribute('aria-hidden', 'true');
 }
+function getCurrentFocusProgressMinutes() {
+  if (state.currentMode !== 'focus') return 0;
+  const liveRemaining = state.running && state.timerCheckpoint && Number.isFinite(Number(state.timerCheckpoint.remaining))
+    ? Math.max(0, Number(state.timerCheckpoint.remaining) || 0)
+    : Math.max(0, Number(state.remaining) || 0);
+  const total = Math.max(1, Number(state.total) || secondsForMode('focus'));
+  const elapsedSeconds = Math.max(0, total - liveRemaining);
+  return elapsedSeconds > 0 ? Math.max(1, Math.ceil(elapsedSeconds / 60)) : 0;
+}
+
 function getContinuousSessionMinutes() {
   const focusSeconds = Math.max(60, secondsForMode('focus'));
+  const checkpointRemaining = state.running && state.timerCheckpoint && Number.isFinite(Number(state.timerCheckpoint.remaining))
+    ? Math.max(0, Number(state.timerCheckpoint.remaining) || 0)
+    : Math.max(0, Number(state.remaining) || 0);
   const completedCycles = Math.max(0, Math.round(Number(state.cycleCount) || 1) - 1);
   const currentSeconds = state.currentMode === 'focus'
-    ? Math.max(0, focusSeconds - Math.max(0, Number(state.remaining) || 0))
+    ? Math.max(0, focusSeconds - checkpointRemaining)
     : 0;
   return Math.max(1, Math.round((completedCycles * focusSeconds + currentSeconds) / 60));
 }
@@ -1462,6 +1569,9 @@ function savePendingSession() {
     releaseWakeLock();
     if (isContinuous) {
       state.cycleCount = 1;
+      state.currentMode = 'focus';
+      state.remaining = secondsForMode('focus');
+      state.total = state.remaining;
     }
     saveState({ immediate: true, reason: 'session-saved' });
     render();
@@ -1723,31 +1833,198 @@ function handleTitleTap() {
     saveState();
   }
 }
+
+const ACHIEVEMENT_DEFS = [
+  {
+    id: 'firstSpark',
+    name: 'First Spark',
+    rarity: 'common',
+    rarityLabel: 'COMMON',
+    icon: '✨',
+    desc: 'Log your first study session.',
+    target: 1,
+    metric: (m) => m.totalSessions,
+    label: (current, target) => `${current} / ${target} session`
+  },
+  {
+    id: 'momentum',
+    name: 'Momentum',
+    rarity: 'rare',
+    rarityLabel: 'RARE',
+    icon: '⚡',
+    desc: 'Log 5 study sessions.',
+    target: 5,
+    metric: (m) => m.totalSessions,
+    label: (current, target) => `${current} / ${target} sessions`
+  },
+  {
+    id: 'triadSync',
+    name: 'Triad Sync',
+    rarity: 'epic',
+    rarityLabel: 'EPIC',
+    icon: '🎯',
+    desc: 'Study with all three subjects in the same week.',
+    target: 3,
+    metric: (m) => m.subjectsTouched,
+    label: (current, target) => `${current} / ${target} subjects`
+  },
+  {
+    id: 'focusForge',
+    name: 'Focus Forge',
+    rarity: 'epic',
+    rarityLabel: 'EPIC',
+    icon: '⏳',
+    desc: 'Reach 10 total study hours.',
+    target: 600,
+    metric: (m) => m.totalMinutes,
+    label: (current, target) => `${minutesToHuman(current)} / ${minutesToHuman(target)}`
+  },
+  {
+    id: 'streakFlame',
+    name: 'Streak Flame',
+    rarity: 'legendary',
+    rarityLabel: 'LEGENDARY',
+    icon: '🔥',
+    desc: 'Build a 3-day streak.',
+    target: 3,
+    metric: (m) => m.streak,
+    label: (current, target) => `${current} / ${target} days`
+  },
+  {
+    id: 'noBreakBeast',
+    name: 'No-Break Beast',
+    rarity: 'legendary',
+    rarityLabel: 'LEGENDARY',
+    icon: '🧠',
+    desc: 'Log one marathon focus block of 75 minutes.',
+    target: 75,
+    metric: (m) => m.longestSession,
+    label: (current, target) => `${minutesToHuman(current)} / ${minutesToHuman(target)}`
+  },
+  {
+    id: 'enayat',
+    name: "Enayat's Challenge",
+    rarity: 'mythic',
+    rarityLabel: 'MYTHIC',
+    icon: '👑',
+    desc: 'Solve 100 questions in a single day.',
+    target: 100,
+    metric: (m) => m.todayQuestions,
+    label: (current, target) => `${current} / ${target} q`
+  }
+];
+
+function getAchievementMetrics() {
+  const records = getRecords();
+  const today = dkey(new Date());
+  const todayRecords = records.filter(r => r.date === today);
+  const totalMinutes = records.reduce((a, r) => a + (Number(r.minutes) || 0), 0);
+  const subjectsTouched = SUBJECTS.filter(subject =>
+    records.some(r => r.subject === subject && (Number(r.minutes) || 0) > 0)
+  ).length;
+  const longestSession = records.reduce((max, r) => Math.max(max, Number(r.minutes) || 0), 0);
+  return {
+    records,
+    todayRecords,
+    todayQuestions: todayRecords.reduce((a, r) => a + (Number(r.questions) || 0), 0),
+    totalSessions: records.length,
+    totalMinutes,
+    subjectsTouched,
+    streak: computeCurrentStreak(records),
+    longestSession
+  };
+}
+
 function maybeUnlockHiddenEggs() {
+  if (state.page === 'achievements') {
+    revealAchievementsOnOpen();
+  }
   renderAchievements();
 }
-function renderAchievements() {
-  const todayQuestions = getRecords().filter(r => r.date === dkey(new Date())).reduce((a, r) => a + (Number(r.questions) || 0), 0);
-  const unlocked = todayQuestions >= 100;
-  const pct = Math.min(100, Math.round((todayQuestions / 100) * 100));
 
-  // Update the full-page achievement item
-  if (els.achEnayat) {
-    els.achEnayat.classList.toggle('ach-unlocked', unlocked);
-    els.achEnayat.classList.toggle('ach-locked', !unlocked);
-  }
-  if (els.achEnayatFill) {
-    els.achEnayatFill.style.width = `${pct}%`;
-  }
-  if (els.achEnayatLabel) {
-    els.achEnayatLabel.textContent = `${todayQuestions} / 100 q`;
-  }
-  if (els.achEnayatBadge) {
-    els.achEnayatBadge.textContent = unlocked ? '🏆' : '🔒';
-  }
+function revealAchievementsOnOpen() {
+  const metrics = getAchievementMetrics();
+  const current = state.achievements || {};
+  const next = { ...current };
+  const newlyUnlocked = [];
+
+  ACHIEVEMENT_DEFS.forEach(def => {
+    const unlocked = Number(def.metric(metrics)) >= Number(def.target);
+    if (unlocked && !next[def.id]) {
+      next[def.id] = true;
+      newlyUnlocked.push(def);
+    }
+  });
+
+  if (!newlyUnlocked.length) return false;
+
+  state.achievements = { ...(state.achievements || {}), ...next };
+  achievementFlashIds = new Set(newlyUnlocked.map(def => def.id));
+
+  const primary = newlyUnlocked[0];
+  const label = newlyUnlocked.length === 1
+    ? `${primary.icon} ${primary.name} unlocked!`
+    : `${newlyUnlocked.length} achievements unlocked!`;
+  showToast(label, 3200);
+
+  saveState({ immediate: true, reason: 'achievements-unlocked' });
+
+  clearTimeout(revealAchievementsOnOpen._t);
+  revealAchievementsOnOpen._t = setTimeout(() => {
+    achievementFlashIds = new Set();
+    renderAchievements();
+  }, 1200);
+
+  return true;
+}
+
+function updateAchievements() {
+  renderAchievements();
+}
+
+function renderAchievements() {
+  const metrics = getAchievementMetrics();
+  const list = els.achievementsList || els.achAchievementsList;
+  const unlockedCount = ACHIEVEMENT_DEFS.reduce((count, def) => count + (state.achievements?.[def.id] ? 1 : 0), 0);
+
   if (els.achUnlockedCount) {
-    els.achUnlockedCount.textContent = unlocked ? '1' : '0';
+    els.achUnlockedCount.textContent = String(unlockedCount);
   }
+  if (els.achTotalCount) {
+    els.achTotalCount.textContent = String(ACHIEVEMENT_DEFS.length);
+  }
+  if (!list) return;
+
+  list.innerHTML = ACHIEVEMENT_DEFS.map(def => {
+    const current = Number(def.metric(metrics)) || 0;
+    const target = Math.max(1, Number(def.target) || 1);
+    const pct = Math.max(0, Math.min(100, Math.round((current / target) * 100)));
+    const unlocked = Boolean(state.achievements?.[def.id]);
+    const rareClass = `rarity-${def.rarity}`;
+    const flashClass = achievementFlashIds.has(def.id) ? 'ach-just-unlocked' : '';
+    const progressLabel = def.label(current, target);
+    return `
+      <div class="ach-item ${rareClass} ${unlocked ? 'ach-unlocked' : 'ach-locked'} ${flashClass}" data-achievement-id="${def.id}">
+        <div class="ach-icon">${def.icon}</div>
+        <div class="ach-body">
+          <div class="ach-topline">
+            <div class="ach-copy">
+              <div class="ach-name">${escapeHtml(def.name)}</div>
+              <div class="ach-desc">${escapeHtml(def.desc)}</div>
+            </div>
+            <div class="ach-rarity">${def.rarityLabel}</div>
+          </div>
+          <div class="ach-progress-wrap">
+            <div class="ach-progress-bar">
+              <div class="ach-progress-fill" style="width:${pct}%"></div>
+            </div>
+            <div class="ach-progress-label">${escapeHtml(progressLabel)}</div>
+          </div>
+        </div>
+        <div class="ach-badge">${unlocked ? '🏆' : '🔒'}</div>
+      </div>
+    `;
+  }).join('');
 }
 
 function renderLeaderboard() {
@@ -2024,15 +2301,18 @@ function init() {
   applyTheme(state.theme);
   if (els.profileName) els.profileName.textContent = state.profile.name || 'Guest';
   ensureProfile();
-  render();
 
+  // Restore timer checkpoint BEFORE the first render() call.
+  // Previously render() ran first, painting the stale pre-reload remaining
+  // value, and the corrected time only appeared up to a second later when
+  // the next tick fired — which read as "the timer reset" on a cold start.
+  // restoreTimerFromCheckpoint() also sets up the tick interval, so no
+  // further interval management is needed here.
   if (state.running) {
-    if (!restoreTimerFromCheckpoint()) {
-      timerPerfStamp = performance.now();
-      clearInterval(interval);
-      interval = setInterval(tick, 1000);
-    }
+    restoreTimerFromCheckpoint();
   }
+
+  render();
 
   maybeUnlockHiddenEggs();
   renderLeaderboard();
@@ -2185,11 +2465,23 @@ els.logBtn.addEventListener('click', () => {
     openSessionModal();
     return;
   }
+  if (state.currentMode !== 'focus') {
+    showToast('Finish your break first, then log the focus session');
+    return;
+  }
+
+  const elapsedFocusMinutes = getCurrentFocusProgressMinutes();
+  if (elapsedFocusMinutes <= 0) {
+    showToast('Start the focus timer before logging a session');
+    return;
+  }
+
+  const completedRound = state.cycleCount;
   if (state.noBreakMode) {
     if (state.running) pauseTimer();
     const restoreState = createTimerSnapshot();
     state.pendingSession = createPendingSession({
-      minutes: getContinuousSessionMinutes(),
+      minutes: elapsedFocusMinutes,
       nextMode: 'focus',
       sessionDate: dkey(new Date()),
       roundCompleted: Math.max(1, Number(state.cycleCount) || 1),
@@ -2200,14 +2492,7 @@ els.logBtn.addEventListener('click', () => {
     render();
     return;
   }
-  if (state.currentMode !== 'focus') {
-    showToast('Finish your break first, then log the focus session');
-    return;
-  }
-  const completedRound = state.cycleCount;
-  const elapsedFocusMinutes = state.remaining < state.total
-    ? Math.max(1, Math.round((state.total - state.remaining) / 60))
-    : state.focus;
+
   if (state.running) pauseTimer();
   const nextMode = nextBreakModeForRound(completedRound);
   state.pendingSession = createPendingSession({

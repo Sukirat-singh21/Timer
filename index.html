@@ -177,7 +177,7 @@
         </div>
 
         <div class="card settings-card">
-          <div class="section-heading settings-tone settings-tone-violet">
+          <div class="section-heading settings-tone settings-tone-orange">
             <h2>⏱ Timer durations</h2>
             <span>In minutes</span>
           </div>
@@ -210,7 +210,7 @@
 
           <hr class="page-divider" />
 
-          <div class="section-heading settings-tone settings-tone-cyan">
+          <div class="section-heading settings-tone settings-tone-orange">
             <h2>🎛 Behaviour</h2>
             <span>Toggle as needed</span>
           </div>
@@ -251,7 +251,7 @@
 
           <hr class="page-divider" />
 
-          <div class="section-heading settings-tone settings-tone-amber">
+          <div class="section-heading settings-tone settings-tone-orange">
             <h2>🎨 Appearance</h2>
             <span>Pick a theme</span>
           </div>
@@ -290,11 +290,11 @@
           <div>
             <div class="eyebrow">🏆 Achievements</div>
             <h2>Your badges</h2>
-            <p>Unlock achievements by hitting daily milestones in your JEE prep. Progress resets at midnight — new day, new challenge.</p>
+            <p>Open this section to scan your stats, reveal badges, and watch the unlock animation fire when you hit a milestone.</p>
           </div>
           <div class="analytics-stats achievements-summary" style="grid-template-columns:repeat(2,minmax(0,1fr))">
             <div class="mini-stat"><span>Unlocked today</span><strong id="achUnlockedCount">0</strong></div>
-            <div class="mini-stat"><span>Total available</span><strong>1</strong></div>
+            <div class="mini-stat"><span>Total available</span><strong id="achTotalCount">7</strong></div>
           </div>
         </div>
 
@@ -304,22 +304,7 @@
             <span>Resets at midnight</span>
           </div>
 
-          <div class="ach-list">
-            <div class="ach-item ach-locked" id="achEnayat">
-              <div class="ach-icon">🔥</div>
-              <div class="ach-body">
-                <div class="ach-name">Enayat's Challenge</div>
-                <div class="ach-desc">Solve 100 questions in a single day. No shortcuts. No excuses.</div>
-                <div class="ach-progress-wrap">
-                  <div class="ach-progress-bar">
-                    <div class="ach-progress-fill" id="achEnayatFill"></div>
-                  </div>
-                  <div class="ach-progress-label" id="achEnayatLabel">0 / 100 q</div>
-                </div>
-              </div>
-              <div class="ach-badge" id="achEnayatBadge">🔒</div>
-            </div>
-          </div>
+          <div class="ach-list" id="achievementsList"></div>
         </div>
 
         <div class="card achievements-info-card">
