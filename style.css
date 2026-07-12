@@ -32,8 +32,8 @@
   --r-lg: 22px;
   --r-md: 16px;
   --r-sm: 12px;
-  --shadow: 0 24px 72px rgba(0,0,0,.55);
-  --shadow-md: 0 12px 36px rgba(0,0,0,.40);
+  --shadow: 0 14px 32px rgba(0,0,0,.45);
+  --shadow-md: 0 10px 22px rgba(0,0,0,.35);
 }
 
 /* ── Page-specific accent system ─────────────────────────── */
@@ -861,7 +861,7 @@ body {
   background:
     linear-gradient(140deg, rgba(255,255,255,.05), rgba(148,163,184,.05) 28%, rgba(9,14,28,.80) 100%);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
-  transition: transform .22s ease, border-color .22s ease, box-shadow .22s ease, filter .22s ease;
+  transition: transform .22s ease, border-color .22s ease;
   position: relative;
   overflow: hidden;
   backdrop-filter: none;
@@ -869,7 +869,6 @@ body {
 
 .ach-item:hover {
   transform: translateY(-2px);
-  filter: saturate(1.05);
 }
 
 .ach-item::before {
@@ -1147,6 +1146,12 @@ body {
 
 /* Leaderboard list */
 .leaderboard-list { margin-top: 2px; }
+
+#leaderboardList .mini-line,
+#achievementsList .ach-item {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 76px;
+}
 
 .leaderboard-row { align-items: center; transition: background .2s, border-color .2s; }
 .leaderboard-row:hover { background: rgba(16,185,129,.08); border-color: rgba(16,185,129,.18); }
@@ -1767,15 +1772,15 @@ body:has(#leaderboardPage.active) .drawer::before {
 
 /* ── Smooth theme transition ─────────────────────────────── */
 body, .card, .primary, .status-pill, .ring svg, .ring-progress, .drawer-item.active {
-  transition-property: background, border-color, box-shadow, filter;
-  transition-duration: .38s;
+  transition-property: border-color, opacity;
+  transition-duration: .3s;
   transition-timing-function: ease;
 }
 .topbar::before,
 .drawer::before,
 .drawer-item[data-page],
 .drawer-item[data-page] .drawer-item-icon {
-  transition: background .38s ease, border-color .38s ease, box-shadow .38s ease, color .38s ease, filter .38s ease, opacity .38s ease;
+  transition: border-color .3s ease, color .3s ease, opacity .3s ease;
 }
 /* Don't override the ring progress animation */
 .ring-progress { transition: stroke-dashoffset .6s cubic-bezier(.4,0,.2,1), stroke .38s ease; }
@@ -1811,7 +1816,10 @@ body::before {
   transition: opacity .5s ease;
 }
 
-/* Shared motion / transition language */
+/* Shared motion / transition language — kept to transform/opacity/color only.
+   box-shadow, filter and gradient backgrounds are left to change instantly
+   instead of animating, since animating those forces a full repaint every
+   frame on mobile GPUs and was the main source of the lag. */
 .topbar,
 .drawer,
 .card,
@@ -1836,8 +1844,8 @@ body::before {
 .mini-line,
 .graph-wrap,
 .analytics-detail {
-  transition-property: background, background-color, border-color, box-shadow, color, filter, transform, opacity;
-  transition-duration: .42s;
+  transition-property: transform, opacity, border-color, color;
+  transition-duration: .28s;
   transition-timing-function: ease;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
@@ -1848,11 +1856,7 @@ body::before {
   isolation: isolate;
   background: rgba(10,16,28,.98);
   border-color: rgba(255,255,255,.09);
-  box-shadow:
-    0 24px 72px rgba(0,0,0,.50),
-    0 0 30px var(--pa-dim),
-    inset 1px 1px rgba(255,255,255,.06),
-    inset -1px -1px rgba(0,0,0,.24);
+  box-shadow: 0 14px 32px rgba(0,0,0,.40);
 }
 
 .topbar::before,
@@ -1903,13 +1907,11 @@ body::before {
 .achievements-grid-card,
 .achievements-info-card,
 .about-box {
-  background: linear-gradient(160deg, rgba(15,22,44,.78), rgba(8,13,28,.72));
-  border-color: rgba(255,255,255,.08);
+  background: linear-gradient(160deg, rgba(15,22,44,.86), rgba(8,13,28,.82));
+  border-color: rgba(255,255,255,.09);
   box-shadow:
-    0 14px 34px rgba(0,0,0,.34),
-    0 0 12px var(--pa-dim),
-    inset 1px 1px rgba(255,255,255,.04),
-    inset -1px -1px rgba(0,0,0,.18);
+    0 10px 22px rgba(0,0,0,.32),
+    inset 0 1px 0 rgba(255,255,255,.05);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
@@ -1931,10 +1933,8 @@ body::before {
     linear-gradient(160deg, rgba(19,28,52,.90), rgba(9,14,28,.76));
   border-color: var(--pa-border);
   box-shadow:
-    0 18px 42px rgba(0,0,0,.42),
-    0 0 18px var(--pa-dim),
-    inset 1px 1px rgba(255,255,255,.06),
-    inset -1px -1px rgba(0,0,0,.22);
+    0 12px 28px rgba(0,0,0,.38),
+    0 0 16px var(--pa-dim);
 }
 
 .hero::before,
@@ -1975,13 +1975,9 @@ body::before {
 .tab,
 .status-pill,
 .mini-line {
-  background: linear-gradient(160deg, rgba(148,163,184,.08), rgba(9,14,28,.74));
-  border-color: rgba(255,255,255,.08);
-  box-shadow:
-    0 10px 22px rgba(0,0,0,.26),
-    0 0 8px var(--pa-dim),
-    inset 1px 1px rgba(255,255,255,.04),
-    inset -1px -1px rgba(0,0,0,.12);
+  background: linear-gradient(160deg, rgba(148,163,184,.09), rgba(9,14,28,.78));
+  border-color: rgba(255,255,255,.09);
+  box-shadow: 0 8px 16px rgba(0,0,0,.24);
 }
 
 .stat-card:hover,
@@ -1994,11 +1990,7 @@ body::before {
 .status-pill:hover,
 .mini-line:hover {
   border-color: var(--pa-border);
-  box-shadow:
-    0 16px 34px rgba(0,0,0,.34),
-    0 0 18px var(--pa-dim),
-    inset 1px 1px rgba(255,255,255,.05),
-    inset -1px -1px rgba(0,0,0,.16);
+  box-shadow: 0 10px 20px rgba(0,0,0,.30);
 }
 
 .stat-card {
@@ -2041,25 +2033,17 @@ body::before {
 /* Accent tuning by depth */
 .stat-card,
 .mini-stat {
-  box-shadow:
-    0 10px 22px rgba(0,0,0,.26),
-    0 0 10px var(--pa-dim),
-    inset 1px 1px rgba(255,255,255,.04),
-    inset -1px -1px rgba(0,0,0,.12);
+  box-shadow: 0 8px 18px rgba(0,0,0,.26);
 }
 
 .mini-stat:hover,
 .stat-card:hover {
-  background: linear-gradient(160deg, rgba(148,163,184,.10), rgba(9,14,28,.70));
+  background: linear-gradient(160deg, rgba(148,163,184,.11), rgba(9,14,28,.74));
 }
 
 .ach-item,
 .podium-card {
-  box-shadow:
-    0 12px 28px rgba(0,0,0,.30),
-    0 0 10px var(--pa-dim),
-    inset 1px 1px rgba(255,255,255,.05),
-    inset -1px -1px rgba(0,0,0,.14);
+  box-shadow: 0 10px 22px rgba(0,0,0,.28);
 }
 
 .drawer-item,
@@ -2067,26 +2051,17 @@ body::before {
 .tab,
 .status-pill,
 .mini-line {
-  box-shadow:
-    0 8px 18px rgba(0,0,0,.20),
-    0 0 8px var(--pa-dim),
-    inset 1px 1px rgba(255,255,255,.04),
-    inset -1px -1px rgba(0,0,0,.10);
+  box-shadow: 0 6px 14px rgba(0,0,0,.20);
 }
 
 /* Unified page-accent interactions */
 .primary {
   background: linear-gradient(135deg, var(--pa), rgba(0,0,0,.18));
-  box-shadow:
-    0 10px 28px rgba(0,0,0,.58),
-    0 0 18px var(--pa-dim);
+  box-shadow: 0 10px 22px rgba(0,0,0,.45);
 }
 .primary:hover {
-  box-shadow:
-    0 14px 36px rgba(0,0,0,.58),
-    0 0 26px var(--pa-dim);
+  box-shadow: 0 12px 26px rgba(0,0,0,.50);
   transform: translateY(-1px);
-  filter: brightness(1.06);
 }
 
 .soft {
@@ -2108,11 +2083,7 @@ body::before {
 .status-pill {
   background: linear-gradient(135deg, var(--pa-dim), rgba(9,14,28,.68));
   border-color: var(--pa-border);
-  box-shadow:
-    0 10px 24px rgba(0,0,0,.24),
-    0 0 16px var(--pa-dim),
-    inset 1px 1px rgba(255,255,255,.04),
-    inset -1px -1px rgba(0,0,0,.12);
+  box-shadow: 0 6px 14px rgba(0,0,0,.22);
 }
 .status-pill::before {
   background: var(--pa);
@@ -2125,10 +2096,7 @@ body::before {
   background: linear-gradient(135deg, var(--pa-dim), rgba(9,14,28,.62));
   border-color: var(--pa-border);
   color: var(--pa-text);
-  box-shadow:
-    0 0 16px var(--pa-dim),
-    0 14px 32px rgba(0,0,0,.30),
-    inset 1px 1px rgba(255,255,255,.06);
+  box-shadow: 0 8px 18px rgba(0,0,0,.26);
 }
 
 #analyticsPage .tab.active,
@@ -2230,14 +2198,13 @@ body.theme-ember .topbar::before {
 .ghost-btn,
 .small-btn,
 .mini-line {
+  /* Only transform/opacity/border/color animate. box-shadow, filter and
+     gradient backgrounds snap instantly on state change instead of
+     animating — that's what was causing the mobile jank. */
   transition:
     transform var(--motion-fast) var(--motion-ease),
-    box-shadow var(--motion-fast) var(--motion-ease),
     border-color var(--motion-fast) ease,
-    background-color var(--motion-fast) ease,
-    background var(--motion-fast) ease,
     color var(--motion-fast) ease,
-    filter var(--motion-fast) ease,
     opacity var(--motion-fast) ease;
 }
 
@@ -2253,7 +2220,6 @@ body.theme-ember .topbar::before {
   .status-pill:hover,
   .mini-line:hover {
     transform: translateY(-3px);
-    filter: brightness(1.03);
   }
 
   .primary:hover,
@@ -2263,7 +2229,6 @@ body.theme-ember .topbar::before {
   .icon-btn:hover,
   .ghost-btn:hover {
     transform: translateY(-1px);
-    filter: brightness(1.04);
   }
 }
 
@@ -2290,21 +2255,12 @@ body.theme-ember .topbar::before {
 .card:hover,
 .card:focus-within {
   border-color: var(--pa-border);
-  box-shadow:
-    0 18px 46px rgba(0,0,0,.40),
-    0 0 22px var(--pa-dim),
-    inset 1px 1px rgba(255,255,255,.05),
-    inset -1px -1px rgba(0,0,0,.14);
+  box-shadow: 0 12px 26px rgba(0,0,0,.36);
 }
 
 .page-header-card:hover,
 .page-header-card:focus-within {
-  box-shadow:
-    0 22px 54px rgba(0,0,0,.42),
-    0 0 30px var(--pa-dim),
-    0 0 14px var(--pa-glow),
-    inset 1px 1px rgba(255,255,255,.06),
-    inset -1px -1px rgba(0,0,0,.14);
+  box-shadow: 0 16px 34px rgba(0,0,0,.40), 0 0 16px var(--pa-glow);
 }
 
 /* Timer ring motion */
@@ -2452,19 +2408,14 @@ body.theme-ember .topbar::before {
 
 /* Achievement cards: unlocked vs locked refinement */
 .ach-item.ach-unlocked {
-  filter: saturate(1.04) contrast(1.02);
   box-shadow:
-    0 16px 38px rgba(0,0,0,.36),
-    0 0 18px rgba(251,191,36,.20),
-    0 0 12px var(--pa-dim),
-    inset 1px 1px rgba(255,255,255,.06),
-    inset -1px -1px rgba(0,0,0,.14);
+    0 10px 22px rgba(0,0,0,.32),
+    0 0 14px rgba(251,191,36,.20);
   animation: none;
 }
 
 .ach-item.ach-locked {
-  filter: saturate(.80) contrast(.95);
-  opacity: .72;
+  opacity: .68;
 }
 
 .ach-item.ach-unlocked::after {
@@ -2487,7 +2438,6 @@ body.theme-ember .topbar::before {
 .ach-item:hover .ach-icon,
 .ach-item:hover .ach-badge {
   transform: translateY(-1px);
-  filter: brightness(1.04);
 }
 
 .ach-progress-bar {
@@ -2523,9 +2473,7 @@ body.theme-ember .topbar::before {
 .podium-card {
   transition:
     transform var(--motion-fast) var(--motion-ease),
-    box-shadow var(--motion-fast) var(--motion-ease),
-    border-color var(--motion-fast) ease,
-    filter var(--motion-fast) ease;
+    border-color var(--motion-fast) ease;
 }
 
 .podium-card::after {
@@ -2570,18 +2518,9 @@ body.theme-ember .topbar::before {
     inset 1px 1px rgba(255,255,255,.08);
 }
 
-/* Unified motion for summary surfaces */
-.stat-card:hover,
-.mini-stat:hover,
-.ach-item:hover,
-.podium-card:hover,
-.drawer-item:hover,
-.chip:hover,
-.tab:hover,
-.status-pill:hover,
-.mini-line:hover {
-  filter: brightness(1.03);
-}
+/* Unified motion for summary surfaces — border/shadow already communicate
+   hover state (set elsewhere); no filter here since it repaints the whole
+   element every time. */
 
 .stat-card,
 .mini-stat,
@@ -2674,14 +2613,13 @@ body.theme-ember .topbar::before {
 #leaderboardPage .leaderboard-summary .mini-stat {
   background: rgba(148,163,184,.06);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
-  transition: background .18s ease, border-color .18s ease, transform .18s ease, filter .18s ease, box-shadow .18s ease;
+  transition: background .18s ease, border-color .18s ease, transform .18s ease;
 }
 
 #achievementsPage .achievements-summary .mini-stat:hover,
 #leaderboardPage .leaderboard-summary .mini-stat:hover {
   border-color: var(--pa-border);
   background: rgba(148,163,184,.11);
-  filter: brightness(1.04);
   transform: translateY(-1px);
 }
 
@@ -2763,18 +2701,12 @@ body.theme-ember .topbar::before {
   min-height: 108px;
   transition:
     transform .18s ease,
-    box-shadow .18s ease,
-    border-color .18s ease,
-    background .18s ease,
-    filter .18s ease;
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.05),
-    0 0 0 rgba(0,0,0,0);
+    border-color .18s ease;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
 }
 
 #achievementsPage .ach-item:hover {
   transform: translateY(-3px);
-  filter: brightness(1.03);
 }
 
 #achievementsPage .ach-item:active {
@@ -2789,21 +2721,15 @@ body.theme-ember .topbar::before {
 }
 
 #achievementsPage .ach-item.ach-locked {
-  opacity: .76;
-  filter: saturate(.82) contrast(.92);
+  opacity: .70;
 }
 
 #achievementsPage .ach-item.ach-unlocked {
   background:
-    linear-gradient(145deg, rgba(255,214,102,.16), rgba(15,22,42,.78)),
-    linear-gradient(160deg, rgba(251,191,36,.08), rgba(16,185,129,.08));
+    linear-gradient(145deg, rgba(255,214,102,.18), rgba(15,22,42,.82)),
+    linear-gradient(160deg, rgba(251,191,36,.09), rgba(16,185,129,.09));
   border-color: rgba(251,191,36,.52);
-  box-shadow:
-    var(--shadow-md),
-    0 0 20px rgba(251,191,36,.12),
-    inset 0 1px 0 rgba(255,255,255,.10),
-    inset 1px 1px 0 rgba(255,255,255,.04),
-    inset -1px -1px 0 rgba(0,0,0,.14);
+  box-shadow: var(--shadow-md), 0 0 14px rgba(251,191,36,.16);
 }
 
 #achievementsPage .ach-item.ach-unlocked::after {
@@ -2853,13 +2779,8 @@ body.theme-ember .topbar::before {
 }
 
 #achievementsPage .ach-progress-fill {
-  transition:
-    width .8s cubic-bezier(.2,.8,.2,1),
-    box-shadow .25s ease,
-    filter .25s ease;
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.12),
-    0 0 12px rgba(251,191,36,.24);
+  transition: width .8s cubic-bezier(.2,.8,.2,1);
+  box-shadow: 0 0 8px rgba(251,191,36,.22);
 }
 
 #achievementsPage .ach-progress-fill::after {
@@ -2926,15 +2847,10 @@ body.theme-ember .topbar::before {
 
 #leaderboardPage .podium-card {
   border: 1px solid rgba(255,255,255,.10);
-  box-shadow:
-    var(--shadow-md),
-    inset 0 1px 0 rgba(255,255,255,.08);
+  box-shadow: var(--shadow-md);
   transition:
     transform .18s ease,
-    box-shadow .18s ease,
-    border-color .18s ease,
-    filter .18s ease,
-    background .18s ease;
+    border-color .18s ease;
 }
 
 #leaderboardPage .podium-card::before {
@@ -2946,7 +2862,6 @@ body.theme-ember .topbar::before {
 
 #leaderboardPage .podium-card:hover {
   transform: translateY(-4px);
-  filter: brightness(1.04);
 }
 
 #leaderboardPage .podium-card:active {
@@ -2957,30 +2872,21 @@ body.theme-ember .topbar::before {
   background:
     linear-gradient(165deg, rgba(255,219,112,.32) 0%, rgba(204,146,31,.16) 36%, rgba(11,18,35,.92) 100%);
   border-color: rgba(255,214,102,.42);
-  box-shadow:
-    var(--shadow-md),
-    0 0 30px rgba(255,193,7,.14),
-    inset 0 1px 0 rgba(255,255,255,.08);
+  box-shadow: var(--shadow-md), 0 0 18px rgba(255,193,7,.16);
 }
 
 #leaderboardPage .podium-card.place-2 {
   background:
     linear-gradient(165deg, rgba(241,245,249,.24) 0%, rgba(148,163,184,.12) 36%, rgba(11,18,35,.92) 100%);
   border-color: rgba(203,213,225,.34);
-  box-shadow:
-    var(--shadow-md),
-    0 0 24px rgba(203,213,225,.10),
-    inset 0 1px 0 rgba(255,255,255,.08);
+  box-shadow: var(--shadow-md), 0 0 14px rgba(203,213,225,.12);
 }
 
 #leaderboardPage .podium-card.place-3 {
   background:
     linear-gradient(165deg, rgba(237,137,54,.22) 0%, rgba(180,83,9,.14) 36%, rgba(11,18,35,.92) 100%);
   border-color: rgba(217,119,6,.34);
-  box-shadow:
-    var(--shadow-md),
-    0 0 24px rgba(180,83,9,.10),
-    inset 0 1px 0 rgba(255,255,255,.08);
+  box-shadow: var(--shadow-md), 0 0 14px rgba(180,83,9,.12);
 }
 
 #leaderboardPage .podium-card.place-1 .podium-medal,
@@ -3014,10 +2920,7 @@ body.theme-ember .topbar::before {
   box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
   transition:
     transform .18s ease,
-    box-shadow .18s ease,
-    border-color .18s ease,
-    background .18s ease,
-    filter .18s ease;
+    border-color .18s ease;
 }
 
 #leaderboardPage .leaderboard-row:nth-child(odd) {
@@ -3028,9 +2931,7 @@ body.theme-ember .topbar::before {
   transform: translateY(-2px);
   background: rgba(16,185,129,.08);
   border-color: rgba(16,185,129,.20);
-  box-shadow:
-    0 8px 20px rgba(16,185,129,.08),
-    inset 0 1px 0 rgba(255,255,255,.04);
+  box-shadow: 0 8px 16px rgba(16,185,129,.10);
 }
 
 #leaderboardPage .leaderboard-row.rank-1 {
