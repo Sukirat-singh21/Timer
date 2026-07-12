@@ -3595,3 +3595,246 @@ body.theme-ember .topbar::before {
   margin-top: 6px;
   line-height: 1.2;
 }
+
+/* ══════════════════════════════════════════════════════════
+   PERFORMANCE TRIM — simplified glass for weak devices
+   Keeps the premium look but removes the heaviest paint costs.
+   ══════════════════════════════════════════════════════════ */
+.topbar,
+.drawer,
+.hero,
+.page-header-card,
+.analytics-header,
+.achievements-header,
+.leaderboard-header,
+.settings-header,
+.card,
+.graph-wrap,
+.analytics-detail,
+.achievements-grid-card,
+.achievements-info-card,
+.about-box,
+.stat-card,
+.mini-stat,
+.ach-item,
+.podium-card,
+.drawer-item,
+.chip,
+.tab,
+.status-pill,
+.mini-line,
+#leaderboardPage .leaderboard-row,
+#leaderboardPage .leaderboard-podium-card,
+#leaderboardPage .leaderboard-list-card,
+#settingsPage .settings-card,
+#settingsPage .setting-field,
+#settingsPage .toggle-row,
+#settingsPage .theme-card {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background-blend-mode: normal !important;
+}
+
+.topbar,
+.drawer {
+  background: linear-gradient(180deg, rgba(13,19,36,.90), rgba(7,11,22,.95)) !important;
+  box-shadow:
+    0 14px 34px rgba(0,0,0,.42),
+    0 0 14px rgba(139,92,246,.10),
+    inset 0 1px 0 rgba(255,255,255,.05) !important;
+}
+
+.topbar::before,
+.drawer::before {
+  filter: none !important;
+  opacity: .24 !important;
+}
+
+.card,
+.graph-wrap,
+.analytics-detail,
+.achievements-grid-card,
+.achievements-info-card,
+.about-box {
+  background: linear-gradient(160deg, rgba(15,22,44,.88), rgba(8,13,28,.82)) !important;
+  box-shadow:
+    0 12px 30px rgba(0,0,0,.34),
+    inset 0 1px 0 rgba(255,255,255,.04) !important;
+}
+
+.hero,
+.page-header-card,
+.analytics-header,
+.achievements-header,
+.leaderboard-header,
+.settings-header {
+  background:
+    radial-gradient(circle at 18% 0%, var(--pa-dim), transparent 42%),
+    linear-gradient(160deg, rgba(19,28,52,.94), rgba(9,14,28,.84)) !important;
+  box-shadow:
+    0 16px 42px rgba(0,0,0,.42),
+    0 0 14px var(--pa-dim),
+    inset 0 1px 0 rgba(255,255,255,.06) !important;
+}
+
+.hero::before,
+.page-header-card::before,
+.analytics-header::before,
+.achievements-header::before,
+.leaderboard-header::before,
+.settings-header::before,
+.card::before,
+.graph-wrap::before,
+.analytics-detail::before,
+.achievements-grid-card::before,
+.achievements-info-card::before,
+.about-box::before,
+.stat-card::before,
+.mini-stat::before,
+.drawer-item::before,
+.chip::before,
+.tab::before,
+.status-pill::before,
+.mini-line::before,
+.ach-item::before,
+.podium-card::before {
+  opacity: .55 !important;
+}
+
+.stat-card,
+.mini-stat,
+.ach-item,
+.podium-card,
+.drawer-item,
+.chip,
+.tab,
+.status-pill,
+.mini-line {
+  background: linear-gradient(160deg, rgba(148,163,184,.08), rgba(9,14,28,.78)) !important;
+  box-shadow:
+    0 8px 20px rgba(0,0,0,.26),
+    inset 0 1px 0 rgba(255,255,255,.035) !important;
+}
+
+.stat-card:hover,
+.mini-stat:hover,
+.ach-item:hover,
+.podium-card:hover,
+.drawer-item:hover,
+.chip:hover,
+.tab:hover,
+.status-pill:hover,
+.mini-line:hover {
+  box-shadow:
+    0 12px 24px rgba(0,0,0,.30),
+    inset 0 1px 0 rgba(255,255,255,.045) !important;
+}
+
+.page-header-card,
+.analytics-header,
+.achievements-header,
+.leaderboard-header,
+.settings-header {
+  border-color: var(--pa-border) !important;
+}
+
+.page-header-card::after,
+.hero::after,
+.analytics-header::after,
+.achievements-header::after,
+.leaderboard-header::after,
+.settings-header::after {
+  height: 3px !important;
+  opacity: .72 !important;
+}
+
+#achievementsPage .ach-item.ach-unlocked {
+  animation: none !important;
+  box-shadow:
+    0 12px 28px rgba(0,0,0,.30),
+    0 0 16px rgba(251,191,36,.12),
+    inset 0 1px 0 rgba(255,255,255,.08) !important;
+}
+
+#achievementsPage .ach-item.ach-unlocked::after,
+#achievementsPage .ach-progress-bar::after,
+#leaderboardPage .podium-card::after {
+  animation: none !important;
+  opacity: .18 !important;
+}
+
+#achievementsPage .ach-progress-bar,
+#leaderboardPage .leaderboard-row {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.03) !important;
+}
+
+#leaderboardPage .leaderboard-podium-card,
+#leaderboardPage .leaderboard-list-card {
+  box-shadow:
+    0 12px 30px rgba(0,0,0,.34),
+    inset 0 1px 0 rgba(255,255,255,.04) !important;
+}
+
+#leaderboardPage .podium-card {
+  box-shadow:
+    0 12px 28px rgba(0,0,0,.30),
+    inset 0 1px 0 rgba(255,255,255,.06) !important;
+}
+
+#leaderboardPage .podium-card.place-1,
+#leaderboardPage .podium-card.place-2,
+#leaderboardPage .podium-card.place-3 {
+  box-shadow:
+    0 12px 28px rgba(0,0,0,.30),
+    inset 0 1px 0 rgba(255,255,255,.06) !important;
+}
+
+#settingsPage .settings-header,
+#settingsPage .settings-card {
+  box-shadow:
+    0 12px 30px rgba(0,0,0,.34),
+    0 0 10px rgba(245,158,11,.06),
+    inset 0 1px 0 rgba(255,255,255,.04) !important;
+}
+
+#settingsPage .setting-field,
+#settingsPage .toggle-row,
+#settingsPage .theme-card {
+  box-shadow:
+    0 8px 18px rgba(0,0,0,.22),
+    inset 0 1px 0 rgba(255,255,255,.03) !important;
+}
+
+#settingsPage .setting-field:hover,
+#settingsPage .toggle-row:hover,
+#settingsPage .theme-card:hover {
+  box-shadow:
+    0 10px 22px rgba(0,0,0,.25),
+    inset 0 1px 0 rgba(255,255,255,.04) !important;
+}
+
+#settingsPage .setting-field input[type="range"]::-webkit-slider-thumb,
+#settingsPage .setting-field input[type="range"]::-moz-range-thumb {
+  box-shadow: 0 3px 8px rgba(0,0,0,.22) !important;
+}
+
+@media (max-width: 520px) {
+  .topbar,
+  .drawer,
+  .hero,
+  .page-header-card,
+  .analytics-header,
+  .achievements-header,
+  .leaderboard-header,
+  .settings-header,
+  .card,
+  .graph-wrap,
+  .analytics-detail,
+  .achievements-grid-card,
+  .achievements-info-card,
+  .about-box {
+    box-shadow:
+      0 10px 24px rgba(0,0,0,.28),
+      inset 0 1px 0 rgba(255,255,255,.035) !important;
+  }
+}
