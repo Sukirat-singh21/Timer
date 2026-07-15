@@ -148,7 +148,7 @@
           <div class="graph-wrap" id="graphArea"></div>
           <div class="analytics-detail" id="analyticsDetail">
             <strong>Tap a bar to inspect it</strong>
-            <span class="muted">Hours, questions, and subject split will appear here.</span>
+            <span class="muted">Hours, questions, subject split, notes, and sessions will appear here.</span>
           </div>
           <div class="legend">
             <span><i class="dot phy"></i>⚡ Physics</span>
@@ -480,7 +480,7 @@
       <div class="modal-head">
         <div>
           <h3 id="analyticsSessionTitle">📅 Session details</h3>
-          <p id="analyticsSessionDescription">Saved study time, question count, and subject breakdown for this day.</p>
+       <p id="analyticsSessionDescription">Review every session, its note, and its question count for this day.</p>
         </div>
         <button class="icon-btn small" id="closeAnalyticsSessionBtn" aria-label="Close session details">✕</button>
       </div>
@@ -493,6 +493,8 @@
       </div>
 
       <div class="mini-lines analytics-subject-questions" id="analyticsSubjectQuestions"></div>
+
+      <div class="analytics-session-list" id="analyticsSessionList" aria-live="polite"></div>
 
       <div class="modal-actions">
         <button class="soft danger" id="deleteAnalyticsSessionBtn">🗑 Delete day</button>

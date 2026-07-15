@@ -72,6 +72,7 @@ const els = {
   analyticsSessionQuestions: $('analyticsSessionQuestions'),
   analyticsSessionCount: $('analyticsSessionCount'),
   analyticsSubjectQuestions: $('analyticsSubjectQuestions'),
+  analyticsSessionList: $('analyticsSessionList'),
   closeAnalyticsSessionBtn: $('closeAnalyticsSessionBtn'),
   closeAnalyticsSessionFooterBtn: $('closeAnalyticsSessionFooterBtn'),
   deleteAnalyticsSessionBtn: $('deleteAnalyticsSessionBtn'),
@@ -113,6 +114,7 @@ const defaultState = {
   total: 25 * 60,
   timerCheckpoint: null,
   records: [],
+  deletedRecordIds: {},
   page: 'timer',
   analyticsView: 'weekly',
   analyticsSelections: { weekly: -1, monthly: -1 },
@@ -122,6 +124,11 @@ const defaultState = {
   streak: 0,
   lastDate: null,
   updatedAt: 0,
+  // Only durable record edits advance this value. UI/settings/timer saves do
+  // not, so they cannot outrank a record deletion during reconciliation.
+  recordsUpdatedAt: 0,
+  // Per-user cloud generation last observed by this local state.
+  cloudStateGeneration: 0,
   aboutPulseShown: false,
   profile: { name: '', createdAt: 0, updatedAt: 0 },
   achievements: {
@@ -155,7 +162,7 @@ let cloudSyncTimer = null;
 let cloudRetryTimer = null;
 let cloudSyncInFlight = false;
 let cloudSyncRequested = false;
-let cloudGeneration = { stateGeneration: 0, leaderboardGeneration: 0, updatedAt: 0, exists: false };
+let cloudGeneration = { stateGeneration: 0, leaderboardGeneration: 0, userGeneration: 0, updatedAt: 0, exists: false };
 let cloudQueue = null;
 let cloudClientId = null;
 let leaderboardRows = [];
@@ -248,10 +255,13 @@ function getCloudSafeState() {
   snapshot.remaining = secondsForMode(snapshot.currentMode);
   snapshot.total = secondsForMode(snapshot.currentMode);
   snapshot.records = getRecords().map(record => ({ ...record }));
+  snapshot.deletedRecordIds = { ...normalizeDeletedRecordIds(state.deletedRecordIds) };
+  snapshot.recordsUpdatedAt = Number(state.recordsUpdatedAt || 0) || 0;
+  snapshot.cloudStateGeneration = Math.max(0, Number(state.cloudStateGeneration || 0) || 0);
   snapshot.analyticsSelections = { ...(state.analyticsSelections || { weekly: -1, monthly: -1 }) };
   snapshot.achievements = { ...(state.achievements || cloneDefaultState().achievements) };
   snapshot.updatedAt = state.updatedAt || Date.now();
-  snapshot.syncVersion = 1;
+  snapshot.syncVersion = 2;
   return snapshot;
 }
 function logCloud(level, message, details) {
@@ -364,13 +374,14 @@ async function ensureCloudSync() {
 }
 
 function normalizeCloudGeneration(generation) {
-  const fallback = { stateGeneration: 0, leaderboardGeneration: 0, updatedAt: 0, exists: false, lastResetAt: 0, lastResetBy: '' };
+  const fallback = { stateGeneration: 0, leaderboardGeneration: 0, userGeneration: 0, updatedAt: 0, exists: false, lastResetAt: 0, lastResetBy: '' };
   if (!generation || typeof generation !== 'object') return fallback;
   return {
     stateGeneration: Math.max(0, Number(generation.stateGeneration || 0) || 0),
     leaderboardGeneration: Math.max(0, Number(generation.leaderboardGeneration || 0) || 0),
+    userGeneration: Math.max(0, Number(generation.userGeneration || 0) || 0),
     updatedAt: Math.max(0, Number(generation.updatedAt || generation.lastResetAt || 0) || 0),
-    exists: Boolean(generation.exists || generation.stateGeneration || generation.leaderboardGeneration || generation.updatedAt),
+    exists: Boolean(generation.exists || generation.stateGeneration || generation.leaderboardGeneration || generation.userGeneration || generation.updatedAt),
     lastResetAt: Math.max(0, Number(generation.lastResetAt || 0) || 0),
     lastResetBy: String(generation.lastResetBy || '').trim().slice(0, 80)
   };
@@ -380,7 +391,8 @@ async function refreshCloudGeneration(options = {}) {
   const mod = await ensureCloudSync();
   if (!mod || typeof mod.refreshCloudGeneration !== 'function') return cloudGeneration;
   try {
-    const next = normalizeCloudGeneration(await mod.refreshCloudGeneration());
+    const identityName = typeof options === 'string' ? options : (options.identityName || '');
+    const next = normalizeCloudGeneration(await mod.refreshCloudGeneration(identityName));
     cloudGeneration = next;
     return cloudGeneration;
   } catch (error) {
@@ -400,30 +412,65 @@ async function claimCloudIdentity(name) {
   if (!mod || typeof mod.pullCloudState !== 'function') return { merged: false };
 
   const sources = [];
+  let namedUserGeneration = 0;
+  let namedStateFound = false;
   try {
     const byName = await mod.pullCloudState(name);
-    if (byName && byName.state) sources.push(byName.state);
+    namedUserGeneration = Number(byName?.userGeneration || 0) || 0;
+    namedStateFound = Boolean(byName && byName.state);
+    if (namedStateFound) sources.push(byName.state);
+    if (byName && byName.userGeneration !== undefined) {
+      cloudGeneration = {
+        ...cloudGeneration,
+        userGeneration: Math.max(Number(cloudGeneration.userGeneration || 0) || 0, Number(byName.userGeneration) || 0)
+      };
+    }
+    if (namedUserGeneration > Number(state.cloudStateGeneration || 0)) {
+      // A per-user hard delete invalidates every older local/anonymous copy;
+      // do not let the legacy device lookup restore it under the same name.
+      state.records = [];
+      state.deletedRecordIds = {};
+      state.recordsUpdatedAt = 0;
+      state.cloudStateGeneration = namedUserGeneration;
+      state.streak = 0;
+    }
   } catch (error) {
     logCloud('warn', 'Could not check existing cloud progress for this name.', error);
   }
   try {
     const byDevice = await mod.pullCloudState();
-    if (byDevice && byDevice.state) sources.push(byDevice.state);
+    if (byDevice && byDevice.state && namedUserGeneration === 0 && !namedStateFound) sources.push(byDevice.state);
   } catch (error) {
     logCloud('warn', "Could not check this device's prior cloud progress.", error);
   }
   if (!sources.length) return { merged: false };
 
   const localCount = getRecords().length;
+
+  // Tombstones only ever grow, so union them from every source before
+  // merging records. This is what stops a stale cloud snapshot (or a second
+  // device that never heard about a deletion) from resurrecting a record
+  // the user already deleted elsewhere.
+  let mergedTombstones = { ...normalizeDeletedRecordIds(state.deletedRecordIds) };
+  sources.forEach(src => {
+    mergedTombstones = mergeTombstones(mergedTombstones, src.deletedRecordIds || {});
+  });
+
   let mergedRecords = getRecords();
   sources.forEach(src => {
-    mergedRecords = mergeRecordsUnion(mergedRecords, Array.isArray(src.records) ? src.records : []);
+    mergedRecords = mergeRecordsUnion(mergedRecords, Array.isArray(src.records) ? src.records : [], mergedTombstones);
   });
 
   const gained = mergedRecords.length > localCount;
+  state.deletedRecordIds = mergedTombstones;
+  state.records = mergedRecords;
+  state.recordsUpdatedAt = Math.max(
+    Number(state.recordsUpdatedAt || 0) || 0,
+    ...sources.map(src => Number(src.recordsUpdatedAt || (Array.isArray(src.records) && src.records.length ? src.updatedAt : 0)) || 0)
+  );
+  if (cloudGeneration.userGeneration) state.cloudStateGeneration = cloudGeneration.userGeneration;
+  state.streak = computeCurrentStreak(mergedRecords);
   if (gained) {
-    state.records = mergedRecords;
-    state.streak = computeCurrentStreak(mergedRecords);
     state.achievements = sources.reduce((acc, src) => ({ ...acc, ...(src.achievements || {}) }), state.achievements || {});
   }
   return { merged: gained, mergedCount: mergedRecords.length, localCount };
@@ -460,11 +507,20 @@ async function pushCloudStateNow(reason = 'state-change', generationOverride = n
     clientId: cloudClientId,
     reason,
     identityName,
-    generation: { stateGeneration: generation.stateGeneration }
+    generation: {
+      stateGeneration: generation.stateGeneration,
+      userGeneration: generation.userGeneration
+    }
   });
   if (result && result.ok) {
-    cloudLastAppliedAt = Number(snapshot.updatedAt || Date.now()) || Date.now();
+    cloudLastAppliedAt = Number(result.updatedAt || snapshot.updatedAt || Date.now()) || Date.now();
     cloudGeneration = normalizeCloudGeneration(result.currentGeneration || generation);
+    state.cloudStateGeneration = cloudGeneration.userGeneration;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (error) {
+      logCloud('warn', 'Could not persist the acknowledged cloud generation locally.', error);
+    }
   }
   return result || { ok: false, reason: 'unknown' };
 }
@@ -480,13 +536,14 @@ async function syncLeaderboardNow(reason = 'state-change', generationOverride = 
   if (!mod || typeof mod.pushLeaderboardStats !== 'function') return false;
   const profile = normalizeProfile(state.profile || loadProfile());
   if (!profile.name) return false;
-  const generation = normalizeCloudGeneration(generationOverride || await refreshCloudGeneration());
-  const localUpdatedAt = Number(state.updatedAt || 0) || 0;
-  const hasMeaningfulData = getRecords().length > 0;
-  if (generation.updatedAt && (!hasMeaningfulData || localUpdatedAt <= generation.updatedAt)) {
-    logCloud('info', 'Skipping leaderboard push: local data predates the current cloud generation.', {
+  const generation = normalizeCloudGeneration(generationOverride || await refreshCloudGeneration(profile.name));
+  const localRecordsUpdatedAt = Number(state.recordsUpdatedAt || 0) || 0;
+  if (!localRecordsUpdatedAt) return false;
+  if (generation.userGeneration !== Number(state.cloudStateGeneration || 0)) {
+    await pullCloudStateIfNewer({ force: true, reason: 'user-generation-reconcile' });
+    logCloud('info', 'Skipping leaderboard push: local state belongs to an older user generation.', {
       reason,
-      localUpdatedAt,
+      localUserGeneration: state.cloudStateGeneration,
       generation
     });
     return false;
@@ -494,12 +551,17 @@ async function syncLeaderboardNow(reason = 'state-change', generationOverride = 
   const stats = getStudyTotals();
   const result = await mod.pushLeaderboardStats(profile, stats, {
     clientId: cloudClientId,
-    updatedAt: localUpdatedAt || Date.now(),
+    updatedAt: Number(state.updatedAt || Date.now()) || Date.now(),
+    recordsUpdatedAt: localRecordsUpdatedAt,
     reason,
-    generation: { leaderboardGeneration: generation.leaderboardGeneration }
+    generation: {
+      leaderboardGeneration: generation.leaderboardGeneration,
+      userGeneration: generation.userGeneration
+    }
   });
   if (result && result.reason === 'generation-mismatch') {
     cloudGeneration = normalizeCloudGeneration(result.currentGeneration || generation);
+    await pullCloudStateIfNewer({ force: true, reason: 'leaderboard-generation-reconcile' });
     return false;
   }
   return Boolean(result && result.ok);
@@ -517,12 +579,34 @@ async function refreshLeaderboard(options = {}) {
     return leaderboardRows;
   }
 }
-function applyCloudSnapshot(remoteState, remoteUpdatedAt, source = 'remote') {
+function applyCloudSnapshot(remoteState, remoteUpdatedAt, source = 'remote', remoteMeta = {}) {
   if (!remoteState || typeof remoteState !== 'object') return false;
   const currentUpdatedAt = Number(state.updatedAt || 0) || 0;
   const nextUpdatedAt = Number(remoteUpdatedAt || remoteState.updatedAt || 0) || 0;
-  if (nextUpdatedAt <= currentUpdatedAt) return false;
-  const mergedRecords = mergeRecordsUnion(getRecords(), Array.isArray(remoteState.records) ? remoteState.records : []);
+  const localRecordsUpdatedAt = Number(state.recordsUpdatedAt || 0) || 0;
+  const remoteRecordsUpdatedAt = Number(remoteState.recordsUpdatedAt || (Array.isArray(remoteState.records) && remoteState.records.length ? remoteState.updatedAt : 0)) || 0;
+  const localTombstones = normalizeDeletedRecordIds(state.deletedRecordIds);
+  const remoteTombstones = normalizeDeletedRecordIds(remoteState.deletedRecordIds || {});
+
+  // Tombstones only ever grow — union them before merging records so a
+  // deletion made on this device (or already known to the cloud) can never
+  // be undone by the other side's snapshot, no matter which side is
+  // "newer" by timestamp.
+  const mergedTombstones = mergeTombstones(localTombstones, remoteTombstones);
+  const mergedRecords = mergeRecordsUnion(getRecords(), Array.isArray(remoteState.records) ? remoteState.records : [], mergedTombstones);
+  const localRecords = getRecords();
+  const tombstonesChanged = Object.keys(mergedTombstones).length !== Object.keys(localTombstones).length
+    || Object.keys(mergedTombstones).some(id => mergedTombstones[id] !== localTombstones[id]);
+  const recordsChanged = mergedRecords.length !== localRecords.length
+    || mergedRecords.some((record, index) => record.id !== localRecords[index]?.id);
+  const applyNewerBlob = nextUpdatedAt > currentUpdatedAt;
+  if (!applyNewerBlob && !tombstonesChanged && !recordsChanged) return false;
+  const localUserGeneration = Number(state.cloudStateGeneration || 0) || 0;
+  const remoteUserGeneration = Number(remoteMeta.userGeneration || 0) || 0;
+  const remoteRecordIds = new Set((Array.isArray(remoteState.records) ? remoteState.records : []).map(record => String(record && record.id || '')));
+  const localDurableContribution = localRecordsUpdatedAt > remoteRecordsUpdatedAt
+    || localRecords.some(record => !remoteRecordIds.has(record.id))
+    || Object.keys(localTombstones).some(id => !remoteTombstones[id]);
 
   // Preserve local ephemeral timer state before merging — cloud pulls must
   // never clobber a running timer. Only durable data (records, settings,
@@ -538,13 +622,19 @@ function applyCloudSnapshot(remoteState, remoteUpdatedAt, source = 'remote') {
     page: state.page,
   };
 
-  state = normalizeState({ ...cloneDefaultState(), ...remoteState, records: mergedRecords });
+  state = normalizeState({
+    ...(applyNewerBlob ? { ...cloneDefaultState(), ...remoteState } : state),
+    records: mergedRecords,
+    deletedRecordIds: mergedTombstones,
+    recordsUpdatedAt: Math.max(localRecordsUpdatedAt, remoteRecordsUpdatedAt),
+    cloudStateGeneration: Math.max(localUserGeneration, remoteUserGeneration)
+  });
 
   // Restore timer state — cloud must not disturb the local running timer
   Object.assign(state, localTimer);
 
-  state.updatedAt = nextUpdatedAt;
-  cloudLastAppliedAt = nextUpdatedAt;
+  state.updatedAt = Math.max(currentUpdatedAt, nextUpdatedAt);
+  cloudLastAppliedAt = Math.max(cloudLastAppliedAt, nextUpdatedAt);
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (error) {
@@ -552,6 +642,9 @@ function applyCloudSnapshot(remoteState, remoteUpdatedAt, source = 'remote') {
   }
   if (cloudQueue && Number(cloudQueue.state?.updatedAt || 0) <= nextUpdatedAt) {
     clearCloudQueue();
+  }
+  if (localDurableContribution && (!remoteUserGeneration || remoteUserGeneration <= localUserGeneration)) {
+    queueCloudSync({ reason: 'record-merge-reconcile', immediate: true });
   }
   return true;
 }
@@ -561,19 +654,39 @@ async function pullCloudStateIfNewer(options = {}) {
   if (!options.force && navigator.onLine === false) return false;
   const identityName = normalizeProfile(state.profile || loadProfile()).name || '';
   const remote = await mod.pullCloudState(identityName);
-  if (!remote || !remote.state) return false;
+  if (!remote) return false;
+  const remoteUserGeneration = Number(remote.userGeneration || 0) || 0;
+  if (!remote.state) {
+    if (remoteUserGeneration <= Number(state.cloudStateGeneration || 0)) return false;
+    state.records = [];
+    state.deletedRecordIds = normalizeDeletedRecordIds(state.deletedRecordIds);
+    state.streak = 0;
+    state.cloudStateGeneration = remoteUserGeneration;
+    state.updatedAt = Math.max(Number(state.updatedAt || 0) || 0, Number(remote.updatedAt || 0) || 0);
+    clearCloudQueue();
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (error) {
+      logCloud('error', 'Failed to persist hard-delete reconciliation locally.', error);
+    }
+    return true;
+  }
   const remoteUpdatedAt = Number(remote.updatedAt || remote.state.updatedAt || 0) || 0;
   const localUpdatedAt = Number(state.updatedAt || 0) || 0;
+  const localRecordsUpdatedAt = Number(state.recordsUpdatedAt || 0) || 0;
+  const remoteRecordsUpdatedAt = Number(remote.state.recordsUpdatedAt || (Array.isArray(remote.state.records) && remote.state.records.length ? remote.state.updatedAt : 0)) || 0;
   const queuedUpdatedAt = Number(cloudQueue?.state?.updatedAt || 0) || 0;
-  if (remoteUpdatedAt <= Math.max(cloudLastAppliedAt, localUpdatedAt)) return false;
-  if (queuedUpdatedAt > remoteUpdatedAt) {
+  const needsRecordReconcile = remoteRecordsUpdatedAt > localRecordsUpdatedAt;
+  const needsUserGenerationReconcile = remoteUserGeneration > Number(state.cloudStateGeneration || 0);
+  if (remoteUpdatedAt <= Math.max(cloudLastAppliedAt, localUpdatedAt) && !needsRecordReconcile && !needsUserGenerationReconcile) return false;
+  if (queuedUpdatedAt > remoteUpdatedAt && !needsUserGenerationReconcile) {
     logCloud('info', 'Keeping queued local state because it is newer than the cloud snapshot.', {
       queuedUpdatedAt,
       remoteUpdatedAt
     });
     return false;
   }
-  const changed = applyCloudSnapshot(remote.state, remoteUpdatedAt, 'pull');
+  const changed = applyCloudSnapshot(remote.state, remoteUpdatedAt, 'pull', remote);
   if (changed) {
     logCloud('info', 'Applied newer cloud state locally.', {
       remoteUpdatedAt,
@@ -614,11 +727,21 @@ async function flushCloudSync(options = {}) {
   const queueAtStart = cloudQueue;
 
   try {
-    const generation = await refreshCloudGeneration({ force: true });
+    const identityName = normalizeProfile(state.profile || loadProfile()).name || '';
+    const generation = await refreshCloudGeneration({ force: true, identityName });
     const queueUpdatedAt = Number(cloudQueue?.state?.updatedAt || 0) || 0;
     const generationUpdatedAt = Number(generation?.updatedAt || 0) || 0;
-    if (generationUpdatedAt && queueUpdatedAt && queueUpdatedAt <= generationUpdatedAt) {
-      logCloud('info', 'Dropping stale cloud queue after generation bump.', { queueUpdatedAt, generationUpdatedAt, reason: options.reason || 'state-change' });
+    const queuedGeneration = normalizeCloudGeneration(cloudQueue?.generation || {});
+    const generationMismatch = queuedGeneration.stateGeneration !== generation.stateGeneration
+      || queuedGeneration.userGeneration !== generation.userGeneration;
+    if ((generationUpdatedAt && queueUpdatedAt && queueUpdatedAt <= generationUpdatedAt) || generationMismatch) {
+      logCloud('info', 'Dropping stale cloud queue after generation bump.', {
+        queueUpdatedAt,
+        generationUpdatedAt,
+        queuedGeneration,
+        generation,
+        reason: options.reason || 'state-change'
+      });
       clearCloudQueue();
       await pullCloudStateIfNewer({ force: true, reason: options.reason || 'generation-reconcile' });
       return false;
@@ -636,7 +759,7 @@ async function flushCloudSync(options = {}) {
     }
 
     if (result && result.reason === 'generation-mismatch') {
-      const latestGeneration = normalizeCloudGeneration(await refreshCloudGeneration({ force: true }));
+      const latestGeneration = normalizeCloudGeneration(await refreshCloudGeneration({ force: true, identityName }));
       const staleQueueUpdatedAt = Number(cloudQueue?.state?.updatedAt || 0) || 0;
       const latestGenerationUpdatedAt = Number(latestGeneration.updatedAt || 0) || 0;
       cloudGeneration = latestGeneration;
@@ -654,7 +777,9 @@ async function flushCloudSync(options = {}) {
     }
 
     if (result && result.stale) {
-      const applied = applyCloudSnapshot(result.remoteState, result.remoteUpdatedAt, 'stale-cloud');
+      const applied = applyCloudSnapshot(result.remoteState, result.remoteUpdatedAt, 'stale-cloud', {
+        userGeneration: result.remoteUserGeneration || result.currentGeneration?.userGeneration || 0
+      });
       if (applied) {
         logCloud('warn', 'Cloud state won the conflict and was applied locally.', result);
       }
@@ -780,19 +905,48 @@ function normalizeRecord(record) {
   };
 }
 
+// Tombstones record which ids were deleted and when. They must remain durable
+// across every device that may still have an old cache; pruning them on a
+// calendar timer would re-open the resurrection bug. A future authenticated
+// cleanup job can prune them only after all devices are known to have synced.
+function normalizeDeletedRecordIds(map) {
+  const out = {};
+  if (!map || typeof map !== 'object') return out;
+  Object.keys(map).forEach(id => {
+    const ts = Number(map[id]) || 0;
+    if (ts > 0) out[String(id)] = ts;
+  });
+  return out;
+}
+function mergeTombstones(localTombstones, remoteTombstones) {
+  const merged = { ...normalizeDeletedRecordIds(localTombstones) };
+  const remote = normalizeDeletedRecordIds(remoteTombstones);
+  Object.keys(remote).forEach(id => {
+    if (!merged[id] || remote[id] > merged[id]) merged[id] = remote[id];
+  });
+  return merged;
+}
+
 // Combines two record lists without losing data from either side. Used any
 // time local state and cloud state need to be reconciled, so a sync never
-// silently replaces real progress with an empty/zero snapshot.
-function mergeRecordsUnion(localRecords, remoteRecords) {
+// silently replaces real progress with an empty/zero snapshot. Any id
+// present in `tombstones` is excluded — a deletion known to either side
+// always wins the merge, so a stale device can't resurrect a record the
+// user deleted elsewhere.
+function mergeRecordsUnion(localRecords, remoteRecords, tombstones = {}) {
   const seen = new Map();
   [...(Array.isArray(localRecords) ? localRecords : []), ...(Array.isArray(remoteRecords) ? remoteRecords : [])]
     .forEach(raw => {
       const record = normalizeRecord(raw);
-      if (record && !seen.has(record.id)) seen.set(record.id, record);
+      if (record && !seen.has(record.id) && !tombstones[record.id]) seen.set(record.id, record);
     });
   return Array.from(seen.values())
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 1000);
+}
+
+function nextRecordsUpdatedAt(previous = state.recordsUpdatedAt) {
+  return Math.max(Date.now(), (Number(previous || 0) || 0) + 1);
 }
 
 function normalizeState(nextState) {
@@ -808,17 +962,23 @@ function normalizeState(nextState) {
   normalized.achievements = { ...cloneDefaultState().achievements, ...(normalized.achievements || {}) };
   normalized.noBreakMode = Boolean(normalized.noBreakMode);
   normalized.profile = normalizeProfile(normalized.profile || loadProfile());
+  normalized.deletedRecordIds = normalizeDeletedRecordIds(normalized.deletedRecordIds);
   const seenRecordIds = new Set();
   normalized.records = Array.isArray(normalized.records)
     ? normalized.records
       .map(normalizeRecord)
       .filter(record => {
-        if (!record || seenRecordIds.has(record.id)) return false;
+        if (!record || seenRecordIds.has(record.id) || normalized.deletedRecordIds[record.id]) return false;
         seenRecordIds.add(record.id);
         return true;
       })
       .slice(0, 1000)
     : [];
+  normalized.recordsUpdatedAt = Math.max(
+    0,
+    Number(normalized.recordsUpdatedAt || (normalized.records.length ? normalized.updatedAt : 0)) || 0
+  );
+  normalized.cloudStateGeneration = Math.max(0, Number(normalized.cloudStateGeneration || 0) || 0);
   normalized.cycleCount = Math.max(1, Math.min(999, Number.parseInt(normalized.cycleCount, 10) || 1));
   normalized.running = Boolean(normalized.running);
   normalized.pendingSession = normalizePendingSession(normalized.pendingSession);
@@ -1026,6 +1186,7 @@ function addRecord({subject, questions, note, minutes, date}) {
   const previousRecords = recs.slice();
   recs.unshift(record);
   state.records = recs.slice(0, 1000);
+  state.recordsUpdatedAt = nextRecordsUpdatedAt();
   state.lastSubject = record.subject;
   currentSubject = record.subject;
   if (!saveState({ immediate: true, reason: 'record-added' })) {
@@ -1040,14 +1201,90 @@ function addRecord({subject, questions, note, minutes, date}) {
 function getRecordsForDate(dateKey) {
   return getRecords().filter(r => r.date === dateKey);
 }
+function refreshCurrentAnalyticsDetail(dateKey) {
+  if (!currentAnalyticsDetail || currentAnalyticsDetail.date !== dateKey) return;
+  const sessions = getRecordsForDate(dateKey);
+  const stats = bucketStats(sessions);
+  currentAnalyticsDetail = {
+    ...currentAnalyticsDetail,
+    totalMinutes: stats.totalMinutes,
+    questions: stats.questions,
+    bySubject: stats.bySubject,
+    questionsBySubject: stats.questionsBySubject,
+    sessions
+  };
+}
+function deleteRecordById(recordId) {
+  const id = String(recordId || '');
+  const record = getRecords().find(item => item.id === id);
+  if (!record) return false;
+  const label = record.note ? `“${record.note}”` : `${record.subject} session`;
+  if (!confirm(`Delete this ${label}? This cannot be undone.`)) return false;
+
+  const previousState = {
+    records: state.records,
+    deletedRecordIds: state.deletedRecordIds,
+    recordsUpdatedAt: state.recordsUpdatedAt,
+    updatedAt: state.updatedAt,
+    streak: state.streak
+  };
+  const previousAnalyticsDetail = currentAnalyticsDetail;
+  const tombstones = { ...normalizeDeletedRecordIds(state.deletedRecordIds) };
+  tombstones[id] = Date.now();
+  state.deletedRecordIds = tombstones;
+  state.records = getRecords().filter(item => item.id !== id);
+  state.recordsUpdatedAt = nextRecordsUpdatedAt();
+  state.streak = computeCurrentStreak(state.records);
+  refreshCurrentAnalyticsDetail(record.date);
+  if (!saveState({ immediate: true, reason: 'record-deleted' })) {
+    state.records = previousState.records;
+    state.deletedRecordIds = previousState.deletedRecordIds;
+    state.recordsUpdatedAt = previousState.recordsUpdatedAt;
+    state.updatedAt = previousState.updatedAt;
+    state.streak = previousState.streak;
+    currentAnalyticsDetail = previousAnalyticsDetail;
+    return false;
+  }
+  updateAchievements();
+  void syncLeaderboardNow('record-deleted');
+  void refreshLeaderboard();
+  showToast('Session deleted');
+  return true;
+}
 function deleteRecordsForDate(dateKey) {
-  const nextRecords = getRecords().filter(r => r.date !== dateKey);
-  if (nextRecords.length === getRecords().length) return false;
-  state.records = nextRecords;
-  state.streak = computeCurrentStreak(nextRecords);
+  const toDelete = getRecords().filter(r => r.date === dateKey);
+  if (!toDelete.length) return false;
+  // Tombstone every deleted id so a sync from another device (or a stale
+  // queued snapshot on this one) can never silently bring these records
+  // back — see mergeRecordsUnion/mergeTombstones.
+  const previousState = {
+    records: state.records,
+    deletedRecordIds: state.deletedRecordIds,
+    recordsUpdatedAt: state.recordsUpdatedAt,
+    updatedAt: state.updatedAt,
+    streak: state.streak
+  };
+  const previousAnalyticsDetail = currentAnalyticsDetail;
+  const previousAnalyticsSession = currentAnalyticsSession;
+  const now = Date.now();
+  const tombstones = { ...normalizeDeletedRecordIds(state.deletedRecordIds) };
+  toDelete.forEach(r => { tombstones[r.id] = now; });
+  state.deletedRecordIds = tombstones;
+  state.records = getRecords().filter(r => r.date !== dateKey);
+  state.recordsUpdatedAt = nextRecordsUpdatedAt();
+  state.streak = computeCurrentStreak(state.records);
   if (currentAnalyticsDetail && currentAnalyticsDetail.date === dateKey) currentAnalyticsDetail = null;
   if (currentAnalyticsSession && currentAnalyticsSession.date === dateKey) currentAnalyticsSession = null;
-  saveState({ immediate: true, reason: 'record-deleted' });
+  if (!saveState({ immediate: true, reason: 'record-deleted' })) {
+    state.records = previousState.records;
+    state.deletedRecordIds = previousState.deletedRecordIds;
+    state.recordsUpdatedAt = previousState.recordsUpdatedAt;
+    state.updatedAt = previousState.updatedAt;
+    state.streak = previousState.streak;
+    currentAnalyticsDetail = previousAnalyticsDetail;
+    currentAnalyticsSession = previousAnalyticsSession;
+    return false;
+  }
   updateAchievements();
   void syncLeaderboardNow('record-deleted');
   void refreshLeaderboard();
@@ -1607,7 +1844,7 @@ function setAnalyticsIndex(view, index) {
 function renderAnalyticsDetail(detail, view) {
   if (!els.analyticsDetail) return;
   if (!detail) {
-    els.analyticsDetail.innerHTML = '<div><strong>Tap a bar to inspect it.</strong></div><div class="muted">You will see hours, questions, and subject split here.</div>';
+    els.analyticsDetail.innerHTML = '<div><strong>Tap a bar to inspect it.</strong></div><div class="muted">You will see hours, questions, subject split, notes, and sessions here.</div>';
     return;
   }
   const split = SUBJECTS.map(s => {
@@ -1616,11 +1853,36 @@ function renderAnalyticsDetail(detail, view) {
   }).join('');
   const period = detail.kind || 'Day';
   const extra = detail.range ? ` - ${detail.range}` : '';
+  const hasSessionDetail = Array.isArray(detail.sessions);
+  const sessions = hasSessionDetail ? detail.sessions : [];
+  const sessionsMarkup = sessions.length ? sessions.map(record => `
+    <article class="analytics-inline-session">
+      <div class="analytics-inline-session-main">
+        <div class="analytics-inline-session-top">
+          <span class="subject-pill ${subjectColorClass(record.subject)}">${escapeHtml(record.subject)}</span>
+          <strong>${minutesToHuman(record.minutes)}</strong>
+        </div>
+        <div class="analytics-inline-session-meta">${escapeHtml(record.at || 'Logged session')} · ${record.questions || 0} questions</div>
+        <div class="analytics-inline-session-note ${record.note ? '' : 'empty'}">${record.note ? `“${escapeHtml(record.note)}”` : 'No note added'}</div>
+      </div>
+      <button class="icon-btn small session-delete-btn" data-delete-record-id="${escapeHtml(record.id)}" aria-label="Delete ${escapeHtml(record.subject)} session">🗑</button>
+    </article>
+  `).join('') : '<div class="analytics-empty-sessions">No sessions recorded for this day.</div>';
+
   els.analyticsDetail.innerHTML = `
-    <div><strong>${period}: ${detail.label}${extra}</strong></div>
-    <div class="muted">${minutesToHuman(detail.totalMinutes)} - ${detail.questions} questions</div>
+    <div class="analytics-detail-heading"><div><strong>${period}: ${escapeHtml(detail.label)}${escapeHtml(extra)}</strong><div class="muted">${minutesToHuman(detail.totalMinutes)} · ${detail.questions} questions${hasSessionDetail ? ` · ${sessions.length} session${sessions.length === 1 ? '' : 's'}` : ''}</div></div><span class="analytics-detail-hint">${hasSessionDetail ? 'Tap a session to manage it' : 'Select a day for the session log'}</span></div>
     <div class="detail-split">${split}</div>
+    ${hasSessionDetail ? (sessions.length ? `<div class="analytics-session-list-inline"><div class="analytics-session-list-title">Session log</div>${sessionsMarkup}</div>` : sessionsMarkup) : ''}
   `;
+  els.analyticsDetail.querySelectorAll('[data-delete-record-id]').forEach(button => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      if (deleteRecordById(button.dataset.deleteRecordId)) {
+        currentAnalyticsSession = null;
+        render();
+      }
+    });
+  });
 }
 
 function setAnalyticsDetailFromClick(view, index) {
@@ -1643,6 +1905,7 @@ function setAnalyticsDetailFromClick(view, index) {
     questions: row.questions,
     bySubject: row.bySubject,
     questionsBySubject: row.questionsBySubject,
+    sessions: getRecordsForDate(row.key),
     range: row.range || ''
   };
 
@@ -1669,6 +1932,29 @@ function openAnalyticsSessionModal(row) {
     els.analyticsSubjectQuestions.innerHTML = SUBJECTS.map(subject => `
       <div class="mini-line"><span>${subject}</span><strong>${subjectStats.questionsBySubject[subject] || 0} q</strong></div>
     `).join('');
+  }
+  if (els.analyticsSessionList) {
+    els.analyticsSessionList.innerHTML = sessions.length ? sessions.map(record => `
+      <article class="analytics-session-row">
+        <div class="analytics-session-row-main">
+          <div class="analytics-session-row-head">
+            <span class="subject-pill ${subjectColorClass(record.subject)}">${escapeHtml(record.subject)}</span>
+            <strong>${minutesToHuman(record.minutes)}</strong>
+          </div>
+          <div class="analytics-session-row-meta">${escapeHtml(record.at || 'Logged session')} · ${record.questions || 0} questions</div>
+          <div class="analytics-session-note ${record.note ? '' : 'empty'}">${record.note ? `“${escapeHtml(record.note)}”` : 'No note added for this session'}</div>
+        </div>
+        <button class="soft danger session-delete-btn" data-delete-record-id="${escapeHtml(record.id)}">Delete</button>
+      </article>
+    `).join('') : '<div class="analytics-empty-sessions">No sessions recorded for this day.</div>';
+    els.analyticsSessionList.querySelectorAll('[data-delete-record-id]').forEach(button => {
+      button.addEventListener('click', () => {
+        if (!deleteRecordById(button.dataset.deleteRecordId)) return;
+        currentAnalyticsSession = null;
+        closeAnalyticsSessionModal();
+        render();
+      });
+    });
   }
   if (els.analyticsSessionModal) {
     els.analyticsSessionModal.classList.remove('hidden');
@@ -1788,6 +2074,7 @@ function renderAnalytics() {
         questions: currentAnalyticsDetail.questions,
         bySubject: currentAnalyticsDetail.bySubject,
         questionsBySubject: currentAnalyticsDetail.questionsBySubject,
+        sessions: currentAnalyticsDetail.sessions,
         range: currentAnalyticsDetail.range
       }
     : {
@@ -2169,6 +2456,7 @@ function exportBackup() {
 function clearLocalData() {
   if (!confirm('Clear all local study data on this device?')) return;
   state.records = [];
+  state.deletedRecordIds = {};
   state.streak = 0;
   state.lastDate = null;
   state.analyticsSelections = { weekly: -1, monthly: -1 };
