@@ -121,7 +121,7 @@
           <div>
             <div class="eyebrow">📊 Analytics</div>
             <h2>Study patterns</h2>
-            <p>Weekly and monthly views generated dynamically from your saved sessions. Tap any bar to inspect it.</p>
+            <p>See weekly or monthly study patterns at a glance. Select a day, then open its session log only when you need it.</p>
           </div>
           <div class="analytics-stats" style="grid-template-columns:repeat(2,minmax(0,1fr))">
             <div class="mini-stat"><span>⏱ Total hours</span><strong id="totalHours">0h</strong></div>
@@ -147,8 +147,8 @@
           <div class="chip-row" id="periodChips"></div>
           <div class="graph-wrap" id="graphArea"></div>
           <div class="analytics-detail" id="analyticsDetail">
-            <strong>Tap a bar to inspect it</strong>
-            <span class="muted">Hours, questions, subject split, notes, and sessions will appear here.</span>
+            <strong>Select a day to inspect it</strong>
+            <span class="muted">Time, questions, subject split, and the session log stay neatly in one place.</span>
           </div>
           <div class="legend">
             <span><i class="dot phy"></i>⚡ Physics</span>
@@ -184,27 +184,27 @@
 
           <div class="settings-grid">
             <label class="setting-field">
-              <span>🎯 Pomodoro length</span>
-              <input id="settingsFocusInput" type="range" min="1" max="60" step="1" value="25" />
-              <small>1–60 minutes per focus round.</small>
+              <span class="setting-field-head"><span>🎯 Pomodoro length</span><output id="settingsFocusValue" for="settingsFocusInput">25 min</output></span>
+              <input id="settingsFocusInput" type="range" min="1" max="60" step="1" value="25" aria-describedby="settingsFocusHint" />
+              <small id="settingsFocusHint">1–60 minutes per focus round.</small>
             </label>
 
             <label class="setting-field">
-              <span>☕ Short break</span>
-              <input id="settingsShortBreakInput" type="range" min="1" max="30" step="1" value="5" />
-              <small>Used in normal Pomodoro mode.</small>
+              <span class="setting-field-head"><span>☕ Short break</span><output id="settingsShortBreakValue" for="settingsShortBreakInput">5 min</output></span>
+              <input id="settingsShortBreakInput" type="range" min="1" max="30" step="1" value="5" aria-describedby="settingsShortBreakHint" />
+              <small id="settingsShortBreakHint">Used in normal Pomodoro mode.</small>
             </label>
 
             <label class="setting-field">
-              <span>🛋 Long break</span>
-              <input id="settingsLongBreakInput" type="range" min="1" max="45" step="1" value="15" />
-              <small>After completing a full round set.</small>
+              <span class="setting-field-head"><span>🛋 Long break</span><output id="settingsLongBreakValue" for="settingsLongBreakInput">15 min</output></span>
+              <input id="settingsLongBreakInput" type="range" min="1" max="45" step="1" value="15" aria-describedby="settingsLongBreakHint" />
+              <small id="settingsLongBreakHint">After completing a full round set.</small>
             </label>
 
             <label class="setting-field">
-              <span>🔁 Rounds before long break</span>
-              <input id="settingsRoundsInput" type="range" min="2" max="8" step="1" value="4" />
-              <small>Classic Pomodoro = 4 rounds.</small>
+              <span class="setting-field-head"><span>🔁 Rounds before long break</span><output id="settingsRoundsValue" for="settingsRoundsInput">4 rounds</output></span>
+              <input id="settingsRoundsInput" type="range" min="2" max="8" step="1" value="4" aria-describedby="settingsRoundsHint" />
+              <small id="settingsRoundsHint">Classic Pomodoro = 4 rounds.</small>
             </label>
           </div>
 
@@ -290,18 +290,18 @@
           <div>
             <div class="eyebrow">🏆 Achievements</div>
             <h2>Your badges</h2>
-            <p>Open this section to scan your stats, reveal badges, and watch the unlock animation fire when you hit a milestone.</p>
+            <p>Track permanent milestones and today’s challenge. New unlocks pop up as soon as you log the session that earns them.</p>
           </div>
           <div class="analytics-stats achievements-summary" style="grid-template-columns:repeat(2,minmax(0,1fr))">
-            <div class="mini-stat"><span>Unlocked today</span><strong id="achUnlockedCount">0</strong></div>
+            <div class="mini-stat"><span>Unlocked</span><strong id="achUnlockedCount">0</strong></div>
             <div class="mini-stat"><span>Total available</span><strong id="achTotalCount">7</strong></div>
           </div>
         </div>
 
         <div class="card achievements-grid-card">
           <div class="section-heading">
-            <h2>🌟 Daily challenges</h2>
-            <span>Resets at midnight</span>
+            <h2>🌟 Milestones &amp; daily challenge</h2>
+            <span>Daily challenge resets at midnight</span>
           </div>
 
           <div class="ach-list" id="achievementsList"></div>
@@ -313,9 +313,9 @@
             <span>Simple rules</span>
           </div>
           <div class="mini-lines">
-            <div class="mini-line"><span>⏰ Daily reset</span><strong>Progress resets every midnight</strong></div>
+            <div class="mini-line"><span>⏰ Daily challenge</span><strong>Only today’s challenge resets at midnight</strong></div>
             <div class="mini-line"><span>📊 Progress bar</span><strong>Track completion below each badge</strong></div>
-            <div class="mini-line"><span>☁️ Cloud sync</span><strong>Achievements saved with session data</strong></div>
+            <div class="mini-line"><span>🏆 Milestones</span><strong>Permanent achievements stay unlocked</strong></div>
           </div>
         </div>
 

@@ -1431,6 +1431,12 @@ body {
   animation: toastIn .28s cubic-bezier(.2,.8,.2,1) both;
   white-space: nowrap;
 }
+.toast.achievement-toast {
+  border-color: rgba(251,191,36,.55);
+  background: linear-gradient(135deg, rgba(54,35,12,.98), rgba(13,20,42,.98));
+  box-shadow: 0 12px 34px rgba(0,0,0,.42), 0 0 22px rgba(251,191,36,.22);
+  animation: achievementToastPop .42s cubic-bezier(.16,.92,.22,1) both;
+}
 
 /* ══════════════════════════════════════════════════════════
    KEYFRAME ANIMATIONS
@@ -1489,6 +1495,11 @@ body {
 @keyframes toastIn {
   from { opacity: 0; transform: translateX(-50%) translateY(10px); }
   to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+@keyframes achievementToastPop {
+  0% { opacity: 0; transform: translateX(-50%) translateY(12px) scale(.94); }
+  65% { opacity: 1; transform: translateX(-50%) translateY(-2px) scale(1.03); }
+  100% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
 }
 
 /* Reduced motion */
@@ -3541,3 +3552,194 @@ body.theme-ember .topbar::before {
   }
 }
 
+/* Keep chart taps cheap on slower phones: selection uses a light outline,
+   while the chart itself is not rebuilt or filter-painted on hover. */
+#analyticsPage .bar {
+  animation: none;
+  transition: background-color .15s ease, outline-color .15s ease;
+}
+#analyticsPage .bar:hover,
+#analyticsPage .chart-bars .day-col:hover .bar {
+  filter: none;
+}
+#analyticsPage .bar.selected {
+  box-shadow: none;
+}
+
+/* Settings sliders: current values remain visible while a thumb is dragged. */
+#settingsPage .setting-field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+#settingsPage .setting-field-head > span {
+  min-width: 0;
+}
+#settingsPage .setting-field output {
+  flex: 0 0 auto;
+  min-width: 70px;
+  padding: 5px 9px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 999px;
+  background: rgba(9,14,28,.52);
+  color: #fff7ed;
+  font-size: .76rem;
+  font-weight: 900;
+  letter-spacing: .01em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+#settingsPage .setting-field input[type="range"] {
+  --range-fill: 0%;
+  background: transparent;
+  box-shadow: none;
+}
+#settingsPage .setting-field input[type="range"]::-webkit-slider-runnable-track {
+  background: linear-gradient(90deg, #fb923c 0 var(--range-fill), rgba(255,255,255,.12) var(--range-fill) 100%);
+  box-shadow: none;
+}
+#settingsPage .setting-field input[type="range"]::-moz-range-track {
+  background: linear-gradient(90deg, #fb923c 0 var(--range-fill), rgba(255,255,255,.12) var(--range-fill) 100%);
+  box-shadow: none;
+}
+
+/* A calmer analytics surface: the selected day reveals details in place;
+   the modal is reserved for explicit session management. */
+#analyticsPage .graph-wrap {
+  min-height: 278px;
+  padding: 16px 12px 12px;
+  background: linear-gradient(180deg, rgba(6,182,212,.08), rgba(9,14,28,.82));
+  box-shadow: 0 8px 20px rgba(0,0,0,.18);
+}
+#analyticsPage .chart-body {
+  background: rgba(6,13,27,.62);
+}
+#analyticsPage .chart-bars {
+  gap: 8px;
+  padding: 6px 8px 3px;
+}
+#analyticsPage .bar {
+  box-shadow: none;
+  border-color: rgba(255,255,255,.10);
+}
+#analyticsPage .analytics-detail {
+  background: linear-gradient(180deg, rgba(6,182,212,.09), rgba(9,14,28,.76));
+  box-shadow: none;
+}
+.analytics-manage-btn {
+  flex: 0 0 auto;
+  padding: 8px 10px;
+  white-space: nowrap;
+}
+
+/* Themes now recolor the app shell and its surfaces, not only the timer.
+   These use solid gradients and restrained borders so they remain cheap to paint. */
+body.theme-ocean .topbar,
+body.theme-ocean .drawer,
+body.theme-ocean .card {
+  background: linear-gradient(160deg, rgba(7,30,48,.96), rgba(4,16,31,.98));
+  border-color: rgba(34,211,238,.22);
+}
+body.theme-ocean .stat-card,
+body.theme-ocean .mini-stat,
+body.theme-ocean .mini-line,
+body.theme-ocean .setting-field,
+body.theme-ocean .toggle-row,
+body.theme-ocean .theme-card,
+body.theme-ocean .analytics-detail {
+  background: linear-gradient(160deg, rgba(8,66,89,.28), rgba(4,19,34,.86));
+  border-color: rgba(34,211,238,.20);
+}
+body.theme-ocean .brand-title,
+body.theme-ocean #settingsPage .setting-field span,
+body.theme-ocean #settingsPage .toggle-row strong {
+  color: #d9faff;
+}
+body.theme-ocean #settingsPage .settings-header p,
+body.theme-ocean #settingsPage .setting-field small,
+body.theme-ocean #settingsPage .toggle-row span {
+  color: rgba(186,242,255,.76);
+}
+body.theme-ocean #settingsPage .settings-tone-orange h2,
+body.theme-ocean #settingsPage .settings-tone-orange span {
+  color: #67e8f9;
+}
+body.theme-ocean #settingsPage .setting-field output {
+  color: #cffafe;
+  border-color: rgba(34,211,238,.28);
+  background: rgba(6,55,76,.56);
+}
+body.theme-ocean #settingsPage .setting-field input[type="range"]::-webkit-slider-runnable-track,
+body.theme-ocean #settingsPage .setting-field input[type="range"]::-moz-range-track {
+  background: linear-gradient(90deg, #22d3ee 0 var(--range-fill), rgba(255,255,255,.12) var(--range-fill) 100%);
+}
+body.theme-ocean .page-divider { background: linear-gradient(90deg, transparent, rgba(34,211,238,.48), transparent); }
+
+body.theme-ember .topbar,
+body.theme-ember .drawer,
+body.theme-ember .card {
+  background: linear-gradient(160deg, rgba(50,20,12,.96), rgba(27,10,8,.98));
+  border-color: rgba(251,146,60,.25);
+}
+body.theme-ember .stat-card,
+body.theme-ember .mini-stat,
+body.theme-ember .mini-line,
+body.theme-ember .setting-field,
+body.theme-ember .toggle-row,
+body.theme-ember .theme-card,
+body.theme-ember .analytics-detail {
+  background: linear-gradient(160deg, rgba(100,38,16,.26), rgba(34,12,9,.86));
+  border-color: rgba(251,146,60,.22);
+}
+body.theme-ember .brand-title,
+body.theme-ember #settingsPage .setting-field span,
+body.theme-ember #settingsPage .toggle-row strong {
+  color: #fff0dd;
+}
+body.theme-ember #settingsPage .setting-field output {
+  color: #ffedd5;
+  border-color: rgba(251,146,60,.30);
+  background: rgba(92,31,12,.52);
+}
+body.theme-ember .page-divider { background: linear-gradient(90deg, transparent, rgba(251,146,60,.48), transparent); }
+
+/* Low-end mobile pass: retain hierarchy and color, but skip expensive filters,
+   layered shadows, and decorative texture work. */
+@media (max-width: 720px) {
+  .ring svg,
+  #progressRing {
+    filter: none;
+  }
+  .card,
+  .stat-card,
+  .mini-stat,
+  .mini-line,
+  .drawer-item,
+  .chip,
+  .tab,
+  .status-pill,
+  .theme-card {
+    box-shadow: 0 5px 12px rgba(0,0,0,.18);
+  }
+  .page-header-card::after,
+  .stat-card::before,
+  .mini-stat::before,
+  .drawer-item::before,
+  .chip::before,
+  .tab::before,
+  .mini-line::before {
+    display: none;
+  }
+  #analyticsPage .graph-wrap {
+    background: linear-gradient(180deg, rgba(6,182,212,.07), rgba(9,14,28,.84));
+    box-shadow: none;
+  }
+  #analyticsPage .chart-bars .day-col {
+    min-width: 44px;
+  }
+  .settings-card .setting-field,
+  .settings-card .toggle-row {
+    box-shadow: none;
+  }
+}

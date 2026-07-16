@@ -30,6 +30,10 @@ const els = {
   settingsShortBreakInput: $('settingsShortBreakInput'),
   settingsLongBreakInput: $('settingsLongBreakInput'),
   settingsRoundsInput: $('settingsRoundsInput'),
+  settingsFocusValue: $('settingsFocusValue'),
+  settingsShortBreakValue: $('settingsShortBreakValue'),
+  settingsLongBreakValue: $('settingsLongBreakValue'),
+  settingsRoundsValue: $('settingsRoundsValue'),
   settingsNoBreakInput: $('settingsNoBreakInput'),
   settingsAutoStartInput: $('settingsAutoStartInput'),
   settingsSoundInput: $('settingsSoundInput'),
@@ -142,6 +146,7 @@ const defaultState = {
     noBreakBeast: false,
     enayat: false
   },
+  achievementDay: '',
   theme: 'nebula'
 };
 
@@ -154,6 +159,8 @@ let timerPerfStamp = 0;
 let currentSubject = state.lastSubject || 'Physics';
 let currentAnalyticsDetail = null;
 let currentAnalyticsSession = null;
+let currentAnalyticsRows = [];
+let currentAnalyticsRowsView = '';
 let titleTapTimer = null;
 let savingSession = false;
 let cloudSyncReady = null;
@@ -960,6 +967,7 @@ function normalizeState(nextState) {
     monthly: Number.isFinite(normalized.analyticsSelections?.monthly) ? normalized.analyticsSelections.monthly : -1
   };
   normalized.achievements = { ...cloneDefaultState().achievements, ...(normalized.achievements || {}) };
+  normalized.achievementDay = isDateKey(normalized.achievementDay) ? normalized.achievementDay : '';
   normalized.noBreakMode = Boolean(normalized.noBreakMode);
   normalized.profile = normalizeProfile(normalized.profile || loadProfile());
   normalized.deletedRecordIds = normalizeDeletedRecordIds(normalized.deletedRecordIds);
@@ -1107,11 +1115,15 @@ function modeName(mode) {
 function subjectColorClass(subject) {
   return subject === 'Physics' ? 'phy' : subject === 'Chemistry' ? 'chem' : 'math';
 }
-function showToast(msg, ms = 2200) {
+function showToast(msg, ms = 2200, options = {}) {
   els.toast.textContent = msg;
+  els.toast.classList.toggle('achievement-toast', Boolean(options.achievement));
   els.toast.classList.remove('hidden');
   clearTimeout(showToast._t);
-  showToast._t = setTimeout(() => els.toast.classList.add('hidden'), ms);
+  showToast._t = setTimeout(() => {
+    els.toast.classList.add('hidden');
+    els.toast.classList.remove('achievement-toast');
+  }, ms);
 }
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (char) => ({
@@ -1166,7 +1178,6 @@ function updateTodaySummary() {
   `).join('');
 
   state.streak = computeCurrentStreak(getRecords());
-  renderAchievements();
 }
 function addRecord({subject, questions, note, minutes, date}) {
   const safeQuestions = Math.max(0, Number.parseInt(questions, 10) || 0);
@@ -1193,7 +1204,7 @@ function addRecord({subject, questions, note, minutes, date}) {
     state.records = previousRecords;
     throw new Error('Storage unavailable');
   }
-  updateAchievements();
+  updateAchievements({ announce: true });
   if (state.page === 'analytics') renderAnalytics();
   void syncLeaderboardNow('record-added');
   void refreshLeaderboard();
@@ -1290,39 +1301,25 @@ function deleteRecordsForDate(dateKey) {
   void refreshLeaderboard();
   return true;
 }
-function updateAchievements() {
-  const recs = getRecords();
-  const today = dkey(new Date());
-  const todayRecs = recs.filter(r => r.date === today);
-  const todayQuestions = todayRecs.reduce((a, r) => a + (Number(r.questions) || 0), 0);
-  const enayatUnlocked = todayQuestions >= 100;
-  const wasLocked = !state.achievements.enayat;
-  state.achievements.enayat = enayatUnlocked;
-  if (enayatUnlocked && wasLocked) {
-    playSound('achievement');
-    showToast('🏆 Enayat\'s Challenge unlocked!', 3200);
-  }
-  renderAchievements();
-}
 function buildWeeklyBuckets() {
-  const recs = getRecords().filter(r => {
-    const d = parseDateKey(r.date);
-    return !Number.isNaN(d.getTime());
-  });
+  const datedRecords = getRecords()
+    .map(record => ({ record, date: parseDateKey(record.date) }))
+    .filter(item => !Number.isNaN(item.date.getTime()));
   const currentWeekStart = startOfWeek(startOfToday());
-  const dates = recs.map(r => parseDateKey(r.date)).filter(d => !Number.isNaN(d.getTime())).sort((a, b) => a - b);
+  const dates = datedRecords.map(item => item.date).sort((a, b) => a - b);
   const firstWeekStart = dates.length ? startOfWeek(dates[0]) : currentWeekStart;
   const today = startOfToday();
-  const weekCount = Math.max(1, Math.floor((currentWeekStart - firstWeekStart) / (DAY_MS * 7)) + 1);
+  const weekCount = Math.max(1, Math.round((currentWeekStart - firstWeekStart) / (DAY_MS * 7)) + 1);
+  const recordsByWeek = Array.from({ length: weekCount }, () => []);
+  datedRecords.forEach(({ record, date }) => {
+    const index = Math.round((startOfWeek(date) - firstWeekStart) / (DAY_MS * 7));
+    if (index >= 0 && index < recordsByWeek.length) recordsByWeek[index].push(record);
+  });
   const weeks = [];
   for (let i = 0; i < weekCount; i++) {
     const start = addDays(firstWeekStart, i * 7);
     const end = addDays(start, 6);
-    const records = recs.filter(r => {
-      const d = parseDateKey(r.date);
-      return !Number.isNaN(d.getTime()) && d >= start && d <= end;
-    });
-    weeks.push({ label: formatDateRange(start, end), start, end, records, isCurrent: today >= start && today <= end });
+    weeks.push({ label: formatDateRange(start, end), start, end, records: recordsByWeek[i], isCurrent: today >= start && today <= end });
   }
   return weeks;
 }
@@ -1341,14 +1338,26 @@ function buildMonthBuckets() {
     records
   }];
 }
+function groupRecordsByDate(records) {
+  const grouped = new Map();
+  (Array.isArray(records) ? records : []).forEach(record => {
+    const key = String(record?.date || '');
+    if (!key) return;
+    const day = grouped.get(key);
+    if (day) day.push(record);
+    else grouped.set(key, [record]);
+  });
+  return grouped;
+}
 function makeDayRows(bucket) {
   const days = [];
   const start = new Date(bucket.start);
+  const recordsByDate = groupRecordsByDate(bucket.records);
   for (let i = 0; i < 7; i++) {
     const d = new Date(start);
     d.setDate(start.getDate() + i);
     const key = dkey(d);
-    const dayRecords = bucket.records.filter(r => r.date === key);
+    const dayRecords = recordsByDate.get(key) || [];
     const { totalMinutes, questions, bySubject, questionsBySubject } = bucketStats(dayRecords);
     days.push({
       key,
@@ -1367,10 +1376,11 @@ function makeMonthRows(bucket) {
   const monthEnd = bucket.end instanceof Date ? bucket.end : endOfMonth();
   const monthStart = bucket.start instanceof Date ? bucket.start : startOfMonth();
   const monthDays = monthEnd.getDate();
+  const recordsByDate = groupRecordsByDate(bucket.records);
   for (let day = 1; day <= monthDays; day++) {
     const d = new Date(monthStart.getFullYear(), monthStart.getMonth(), day);
     const key = dkey(d);
-    const dayRecords = bucket.records.filter(r => r.date === key);
+    const dayRecords = recordsByDate.get(key) || [];
     const { totalMinutes, questions, bySubject, questionsBySubject } = bucketStats(dayRecords);
     rows.push({
       key,
@@ -1384,6 +1394,16 @@ function makeMonthRows(bucket) {
   }
   return rows;
 }
+function renderSessionLogButton() {
+  if (!els.logBtn) return;
+  const hasFocusProgress = state.currentMode === 'focus'
+    && (state.running || state.pendingSession || Number(state.remaining) < Number(state.total));
+  const logAllowed = Boolean(state.pendingSession || hasFocusProgress);
+  els.logBtn.disabled = !logAllowed;
+  els.logBtn.style.opacity = logAllowed ? '' : '0.38';
+  els.logBtn.title = logAllowed ? '' : 'Start the focus timer before logging a session';
+  els.logBtn.textContent = state.running && !state.pendingSession ? '✏️ Log & Pause' : '✏️ Log Session';
+}
 function render(options = {}) {
   const running = state.running;
   els.timer.textContent = fmt(state.remaining);
@@ -1392,11 +1412,7 @@ function render(options = {}) {
     ? (state.noBreakMode ? `Cycle ${state.cycleCount}` : `Round ${state.cycleCount} of ${state.roundsBeforeLong}`)
     : modeName(state.currentMode);
   els.startPauseBtn.textContent = running ? 'Pause' : 'Start';
-  const hasFocusProgress = state.currentMode === 'focus' && (state.running || state.pendingSession || Number(state.remaining) < Number(state.total));
-  const logAllowed = Boolean(state.pendingSession || hasFocusProgress);
-  els.logBtn.disabled = !logAllowed;
-  els.logBtn.style.opacity = logAllowed ? '' : '0.38';
-  els.logBtn.title = logAllowed ? '' : 'Start the focus timer before logging a session';
+  renderSessionLogButton();
   els.statusPill.textContent = running ? 'Locked in' : (
     state.pendingSession ? 'Log session' :
     (state.noBreakMode && state.currentMode === 'focus' ? 'Continuous study' :
@@ -1408,6 +1424,9 @@ function render(options = {}) {
   document.body.style.boxShadow = state.pulse ? 'inset 0 0 100px rgba(124,58,237,0.08)' : 'none';
 
   updateTodaySummary();
+  // Re-derive daily achievements on every full render so a midnight rollover
+  // or a newer cloud snapshot cannot leave yesterday's badge visible.
+  updateAchievements({ announce: false });
   updateStats();
   renderTimerOnly();
   if (state.page === 'analytics') renderAnalytics();
@@ -1667,12 +1686,13 @@ function playSound(soundType) {
 function applyTheme(theme) {
   const valid = ['nebula', 'ocean', 'ember'];
   const t = valid.includes(theme) ? theme : 'nebula';
-  document.body.classList.remove('theme-ocean', 'theme-ember');
-  if (t !== 'nebula') document.body.classList.add(`theme-${t}`);
+  document.body.classList.remove('theme-nebula', 'theme-ocean', 'theme-ember');
+  document.body.classList.add(`theme-${t}`);
   state.theme = t;
   // Sync active state on all theme cards (settings page may not be open yet)
   document.querySelectorAll('.theme-card[data-theme]').forEach(card => {
     card.classList.toggle('active', card.dataset.theme === t);
+    card.setAttribute('aria-pressed', String(card.dataset.theme === t));
   });
 }
 
@@ -1694,6 +1714,7 @@ function startTimer() {
   saveTimerCheckpoint();
   els.statusPill.textContent = 'Locked in';
   els.startPauseBtn.textContent = 'Pause';
+  renderSessionLogButton();
   tick();
   interval = setInterval(tick, 1000);
   requestWakeLock();
@@ -1841,7 +1862,7 @@ function setAnalyticsIndex(view, index) {
   state.analyticsSelections[view] = index;
 }
 
-function renderAnalyticsDetail(detail, view) {
+function renderAnalyticsDetailLegacy(detail, view) {
   if (!els.analyticsDetail) return;
   if (!detail) {
     els.analyticsDetail.innerHTML = '<div><strong>Tap a bar to inspect it.</strong></div><div class="muted">You will see hours, questions, subject split, notes, and sessions here.</div>';
@@ -1885,13 +1906,47 @@ function renderAnalyticsDetail(detail, view) {
   });
 }
 
-function setAnalyticsDetailFromClick(view, index) {
-  const buckets = view === 'monthly' ? buildMonthBuckets() : buildWeeklyBuckets();
-  const selectedIndex = getAnalyticsIndex(view, buckets.length);
-  const selected = buckets[selectedIndex] || buckets[buckets.length - 1];
-  if (!selected) return;
+function renderAnalyticsDetail(detail, view) {
+  if (!els.analyticsDetail) return;
+  if (!detail) {
+    els.analyticsDetail.innerHTML = '<div><strong>Select a day for the session log.</strong></div><div class="muted">The chart stays focused; session notes and controls open only when you need them.</div>';
+    return;
+  }
 
-  const rows = view === 'weekly' ? makeDayRows(selected) : makeMonthRows(selected);
+  const split = SUBJECTS.map(subject => {
+    const subjectQuestions = detail.questionsBySubject?.[subject] || 0;
+    return `<div class="mini-line"><span>${subject}</span><strong>${minutesToHuman(detail.bySubject?.[subject] || 0)} · ${subjectQuestions} q</strong></div>`;
+  }).join('');
+  const period = detail.kind || 'Day';
+  const extra = detail.range ? ` - ${detail.range}` : '';
+  const sessions = Array.isArray(detail.sessions) ? detail.sessions : null;
+  const sessionCount = sessions?.length || 0;
+  const action = sessions
+    ? `<button class="soft analytics-manage-btn" data-open-selected-day>${sessionCount ? `View ${sessionCount} session${sessionCount === 1 ? '' : 's'}` : 'Manage day'}</button>`
+    : '<span class="analytics-detail-hint">Select a day for sessions</span>';
+
+  els.analyticsDetail.innerHTML = `
+    <div class="analytics-detail-heading"><div><strong>${period}: ${escapeHtml(detail.label)}${escapeHtml(extra)}</strong><div class="muted">${minutesToHuman(detail.totalMinutes)} · ${detail.questions} questions${sessions ? ` · ${sessionCount} session${sessionCount === 1 ? '' : 's'}` : ''}</div></div>${action}</div>
+    <div class="detail-split">${split}</div>
+  `;
+  els.analyticsDetail.querySelector('[data-open-selected-day]')?.addEventListener('click', openCurrentAnalyticsDetailModal);
+}
+
+function openCurrentAnalyticsDetailModal() {
+  if (!currentAnalyticsDetail || currentAnalyticsRowsView !== currentAnalyticsDetail.view) return;
+  const row = currentAnalyticsRows[currentAnalyticsDetail.index];
+  if (row) openAnalyticsSessionModal(row);
+}
+
+function setAnalyticsDetailFromClick(view, index) {
+  const rows = currentAnalyticsRowsView === view && currentAnalyticsRows.length
+    ? currentAnalyticsRows
+    : (() => {
+        const buckets = view === 'monthly' ? buildMonthBuckets() : buildWeeklyBuckets();
+        const selectedIndex = getAnalyticsIndex(view, buckets.length);
+        const selected = buckets[selectedIndex] || buckets[buckets.length - 1];
+        return selected ? (view === 'weekly' ? makeDayRows(selected) : makeMonthRows(selected)) : [];
+      })();
   const row = rows[index];
   if (!row) return;
 
@@ -1909,8 +1964,13 @@ function setAnalyticsDetailFromClick(view, index) {
     range: row.range || ''
   };
 
-  renderAnalytics();
-  openAnalyticsSessionModal(row);
+  els.graphArea.querySelectorAll('.day-col.selected, .bar.selected').forEach(node => node.classList.remove('selected'));
+  const selectedNode = els.graphArea.querySelector(`[data-chart-view="${view}"][data-chart-index="${index}"]`);
+  if (selectedNode) {
+    selectedNode.classList.add('selected');
+    selectedNode.querySelector('.bar')?.classList.add('selected');
+  }
+  renderAnalyticsDetail(currentAnalyticsDetail, view);
 }
 
 function openAnalyticsSessionModal(row) {
@@ -2024,6 +2084,8 @@ function renderAnalytics() {
   }
 
   const chartRows = view === 'weekly' ? makeDayRows(selected) : makeMonthRows(selected);
+  currentAnalyticsRows = chartRows;
+  currentAnalyticsRowsView = view;
   const maxTotal = Math.max(1, ...chartRows.map(d => d.totalMinutes));
   const tickStep = getNiceTickStep(maxTotal);
   const maxTick = Math.max(tickStep, Math.ceil(maxTotal / tickStep) * tickStep);
@@ -2094,19 +2156,7 @@ function renderAnalytics() {
 
   renderAnalyticsDetail(selectedDetail, view);
 
-  els.graphArea.querySelectorAll('.day-col[data-chart-index]').forEach(node => {
-    const selectBar = () => setAnalyticsDetailFromClick(view, Number(node.dataset.chartIndex));
-    node.addEventListener('click', selectBar);
-    node.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        selectBar();
-      }
-    });
-  });
-
   updateStats();
-  renderAchievements();
 }
 function handleTitleTap() {
   state.titleTapCount = (state.titleTapCount || 0) + 1;
@@ -2191,6 +2241,7 @@ const ACHIEVEMENT_DEFS = [
   {
     id: 'enayat',
     name: "Enayat's Challenge",
+    daily: true,
     rarity: 'mythic',
     rarityLabel: 'MYTHIC',
     icon: '👑',
@@ -2225,48 +2276,59 @@ function getAchievementMetrics() {
 function maybeUnlockHiddenEggs() {
   if (state.page === 'achievements') {
     revealAchievementsOnOpen();
+  } else {
+    updateAchievements({ announce: false });
   }
-  renderAchievements();
 }
 
 function revealAchievementsOnOpen() {
+  return updateAchievements({ announce: true });
+}
+
+function updateAchievements({ announce = false, persist = true } = {}) {
   const metrics = getAchievementMetrics();
   const current = state.achievements || {};
   const next = { ...current };
   const newlyUnlocked = [];
+  const today = dkey(new Date());
 
   ACHIEVEMENT_DEFS.forEach(def => {
     const unlocked = Number(def.metric(metrics)) >= Number(def.target);
-    if (unlocked && !next[def.id]) {
+    if (def.daily) {
+      // Daily achievements are derived from today's records. This also
+      // repairs old saved data that kept the badge unlocked forever.
+      next[def.id] = unlocked;
+      if (unlocked && !current[def.id] && announce) newlyUnlocked.push(def);
+    } else if (unlocked && !current[def.id]) {
       next[def.id] = true;
-      newlyUnlocked.push(def);
+      if (announce) newlyUnlocked.push(def);
     }
   });
 
-  if (!newlyUnlocked.length) return false;
+  const changed = ACHIEVEMENT_DEFS.some(def => Boolean(current[def.id]) !== Boolean(next[def.id]))
+    || state.achievementDay !== today;
+  state.achievements = next;
+  state.achievementDay = today;
 
-  state.achievements = { ...(state.achievements || {}), ...next };
-  achievementFlashIds = new Set(newlyUnlocked.map(def => def.id));
+  if (changed && persist) saveState({ immediate: true, reason: 'achievements-updated' });
 
-  const primary = newlyUnlocked[0];
-  const label = newlyUnlocked.length === 1
-    ? `${primary.icon} ${primary.name} unlocked!`
-    : `${newlyUnlocked.length} achievements unlocked!`;
-  showToast(label, 3200);
+  if (newlyUnlocked.length) {
+    achievementFlashIds = new Set(newlyUnlocked.map(def => def.id));
+    const primary = newlyUnlocked[0];
+    const label = newlyUnlocked.length === 1
+      ? `${primary.icon} ${primary.name} unlocked!`
+      : `${newlyUnlocked.length} achievements unlocked!`;
+    playSound('achievement');
+    showToast(label, 3600, { achievement: true });
 
-  saveState({ immediate: true, reason: 'achievements-unlocked' });
+    clearTimeout(updateAchievements._t);
+    updateAchievements._t = setTimeout(() => {
+      achievementFlashIds = new Set();
+      if (state.page === 'achievements') renderAchievements();
+    }, 1200);
+  }
 
-  clearTimeout(revealAchievementsOnOpen._t);
-  revealAchievementsOnOpen._t = setTimeout(() => {
-    achievementFlashIds = new Set();
-    renderAchievements();
-  }, 1200);
-
-  return true;
-}
-
-function updateAchievements() {
-  renderAchievements();
+  return { changed, newlyUnlocked };
 }
 
 function renderAchievements() {
@@ -2491,18 +2553,35 @@ function sanitizeNumbers() {
   state.roundsBeforeLong = Math.max(2, Math.min(8, Number.isFinite(Number(state.roundsBeforeLong)) ? Number(state.roundsBeforeLong) : 4));
   state.noBreakMode = Boolean(state.noBreakMode);
 }
+function updateSettingsRangeValue(input, output, suffix) {
+  if (!input) return;
+  const min = Number(input.min) || 0;
+  const max = Number(input.max) || 100;
+  const value = Math.min(max, Math.max(min, Number(input.value) || min));
+  const percent = max > min ? ((value - min) / (max - min)) * 100 : 0;
+  input.style.setProperty('--range-fill', `${percent}%`);
+  if (output) output.textContent = `${value} ${suffix}`;
+}
+function renderSettingsRangeValues() {
+  updateSettingsRangeValue(els.settingsFocusInput, els.settingsFocusValue, 'min');
+  updateSettingsRangeValue(els.settingsShortBreakInput, els.settingsShortBreakValue, 'min');
+  updateSettingsRangeValue(els.settingsLongBreakInput, els.settingsLongBreakValue, 'min');
+  updateSettingsRangeValue(els.settingsRoundsInput, els.settingsRoundsValue, 'rounds');
+}
 function renderSettings() {
   if (!els.settingsPage) return;
   if (els.settingsFocusInput) els.settingsFocusInput.value = String(state.focus);
   if (els.settingsShortBreakInput) els.settingsShortBreakInput.value = String(state.shortBreak);
   if (els.settingsLongBreakInput) els.settingsLongBreakInput.value = String(state.longBreak);
   if (els.settingsRoundsInput) els.settingsRoundsInput.value = String(state.roundsBeforeLong);
+  renderSettingsRangeValues();
   if (els.settingsNoBreakInput) els.settingsNoBreakInput.checked = Boolean(state.noBreakMode);
   if (els.settingsAutoStartInput) els.settingsAutoStartInput.checked = Boolean(state.autoStart);
   if (els.settingsSoundInput) els.settingsSoundInput.checked = Boolean(state.sound);
   if (els.settingsPulseInput) els.settingsPulseInput.checked = Boolean(state.pulse);
   document.querySelectorAll('.theme-card[data-theme]').forEach(card => {
     card.classList.toggle('active', card.dataset.theme === (state.theme || 'nebula'));
+    card.setAttribute('aria-pressed', String(card.dataset.theme === (state.theme || 'nebula')));
   });
 }
 function applySettingsFromUI() {
@@ -2835,9 +2914,24 @@ els.subjectChips.forEach(btn => btn.addEventListener('click', () => {
 document.querySelectorAll('.tab[data-analytics-view]').forEach(btn => {
   btn.addEventListener('click', () => setAnalyticsView(btn.dataset.analyticsView));
 });
+if (els.graphArea) {
+  els.graphArea.addEventListener('click', (event) => {
+    const node = event.target.closest('.day-col[data-chart-index]');
+    if (!node) return;
+    setAnalyticsDetailFromClick(node.dataset.chartView, Number(node.dataset.chartIndex));
+  });
+  els.graphArea.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const node = event.target.closest('.day-col[data-chart-index]');
+    if (!node) return;
+    event.preventDefault();
+    setAnalyticsDetailFromClick(node.dataset.chartView, Number(node.dataset.chartIndex));
+  });
+}
 if (els.settingsPage) {
   [els.settingsFocusInput, els.settingsShortBreakInput, els.settingsLongBreakInput, els.settingsRoundsInput].forEach(input => {
     if (!input) return;
+    input.addEventListener('input', renderSettingsRangeValues);
     input.addEventListener('change', applySettingsFromUI);
     input.addEventListener('blur', applySettingsFromUI);
   });
