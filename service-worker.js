@@ -41,7 +41,11 @@ self.addEventListener('fetch', event => {
           }
           return resp;
         })
-        .catch(() => caches.match(event.request).then(cached => cached || caches.match('index.html')))
+        .catch(() =>
+          caches.open(CACHE).then(cache =>
+            cache.match(event.request).then(cached => cached || cache.match('index.html'))
+          )
+        )
     );
     return;
   }
@@ -50,16 +54,28 @@ self.addEventListener('fetch', event => {
   // cached copy instantly for speed, but always fetch a fresh copy in the
   // background and update the cache — so the *next* load already has the
   // new code.
+  //
+  // Scoped to THIS worker's own cache via caches.open(CACHE) rather than
+  // the global caches.match(). The global lookup searches every cache on
+  // the origin, and right after a deploy there are briefly two: this
+  // worker's own (old) cache, and a newer cache already fully populated by
+  // a waiting update's install step. An unscoped match can pull from
+  // either one unpredictably, handing back a mismatched mix of old and
+  // new assets (e.g. new app.js paired with old style.css) while an
+  // update is pending. Scoping to CACHE keeps this worker internally
+  // consistent until it actually activates.
   event.respondWith(
-    caches.match(event.request).then(cached => {
-      const networkFetch = fetch(event.request).then(resp => {
-        if (resp && resp.status === 200 && resp.type === 'basic') {
-          const copy = resp.clone();
-          caches.open(CACHE).then(cache => cache.put(event.request, copy)).catch(() => {});
-        }
-        return resp;
-      }).catch(() => cached);
-      return cached || networkFetch;
-    })
+    caches.open(CACHE).then(cache =>
+      cache.match(event.request).then(cached => {
+        const networkFetch = fetch(event.request).then(resp => {
+          if (resp && resp.status === 200 && resp.type === 'basic') {
+            const copy = resp.clone();
+            cache.put(event.request, copy).catch(() => {});
+          }
+          return resp;
+        }).catch(() => cached);
+        return cached || networkFetch;
+      })
+    )
   );
 });

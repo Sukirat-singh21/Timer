@@ -1050,6 +1050,302 @@ body {
 }
 
 /* ══════════════════════════════════════════════════════════
+   ACHIEVEMENT GROUPS — Daily vs Permanent segregation
+   ══════════════════════════════════════════════════════════ */
+.ach-group {
+  display: grid;
+  gap: 14px;
+}
+
+/* Keep the two groups clearly separated without crowding the card. */
+.ach-group + .ach-group {
+  margin-top: 22px;
+  padding-top: 22px;
+  border-top: 1px dashed rgba(148, 163, 184, .18);
+}
+
+/* Daily: warm/gold top stripe + soft tint to signal "active challenge". */
+.ach-group--daily {
+  position: relative;
+  padding: 18px 16px 16px;
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(251, 191, 36, .08), rgba(251, 191, 36, .02) 60%, transparent),
+    linear-gradient(180deg, rgba(255, 255, 255, .03), transparent);
+  border: 1px solid rgba(251, 191, 36, .22);
+}
+.ach-group--daily::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 18px;
+  right: 18px;
+  height: 3px;
+  border-radius: 0 0 999px 999px;
+  background: linear-gradient(90deg, transparent, rgba(251, 191, 36, .9), transparent);
+}
+
+/* Permanent: cooler/neutral tint to signal "milestones". */
+.ach-group--permanent {
+  position: relative;
+  padding: 18px 16px 16px;
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(99, 102, 241, .07), rgba(99, 102, 241, .02) 60%, transparent),
+    linear-gradient(180deg, rgba(255, 255, 255, .03), transparent);
+  border: 1px solid rgba(148, 163, 184, .18);
+}
+.ach-group--permanent::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 18px;
+  right: 18px;
+  height: 3px;
+  border-radius: 0 0 999px 999px;
+  background: linear-gradient(90deg, transparent, rgba(129, 140, 248, .7), transparent);
+}
+
+/* Group headings: a touch bolder than the page-level section-heading. */
+.ach-group-heading {
+  align-items: baseline;
+  padding: 0 2px;
+}
+.ach-group-heading h2 {
+  margin: 0;
+  font-size: 1.12rem;
+  font-weight: 900;
+  letter-spacing: -.03em;
+}
+.ach-group-heading--daily h2 {
+  color: #fde68a;
+}
+.ach-group-heading--permanent h2 {
+  color: #c7d2fe;
+}
+.ach-group-heading span {
+  color: var(--muted);
+  font-size: .82rem;
+  font-weight: 700;
+}
+
+/* Daily group: tighter gap between challenge cards. */
+.ach-list--daily { gap: 12px; }
+.ach-list--permanent { gap: 14px; }
+
+/* ══════════════════════════════════════════════════════════
+   ACHIEVEMENT UNLOCK CELEBRATION POPUP
+   ══════════════════════════════════════════════════════════ */
+.ach-popup-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: radial-gradient(ellipse at center, rgba(20, 14, 4, .55), rgba(2, 6, 18, .82));
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: achPopupFade .25s ease both;
+  /* Tap anywhere dismisses — make the whole surface feel tappable. */
+  cursor: pointer;
+}
+
+.ach-popup {
+  --ach-accent: #fbbf24;
+  --ach-soft: rgba(251, 191, 36, .18);
+  --ach-ring: rgba(251, 191, 36, .40);
+  --ach-shadow: rgba(251, 191, 36, .30);
+  position: relative;
+  width: min(92vw, 420px);
+  text-align: center;
+  padding: 34px 28px 22px;
+  border-radius: 30px;
+  border: 1px solid var(--ach-ring);
+  color: #fff7e6;
+  background:
+    radial-gradient(ellipse at 50% 0%, var(--ach-soft), transparent 62%),
+    linear-gradient(180deg, rgba(22, 18, 8, .97), rgba(8, 11, 24, .98));
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, .6),
+    0 0 60px var(--ach-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, .08);
+  overflow: hidden;
+  cursor: pointer;
+  /* Start hidden; .ach-popup--play triggers the entrance. */
+  opacity: 0;
+  transform: scale(.85);
+}
+
+/* Drift the whole card up + settle, with a tasteful overshoot. */
+.ach-popup.ach-popup--play {
+  animation: achPopupIn .55s cubic-bezier(.18, 1.25, .4, 1) both;
+}
+
+/* Rotating conic-gradient glow ring tinted by rarity, behind the badge. */
+.ach-popup-glow {
+  position: absolute;
+  top: 26px;
+  left: 50%;
+  width: 168px;
+  height: 168px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    var(--ach-accent),
+    transparent 25%,
+    var(--ach-accent) 50%,
+    transparent 75%,
+    var(--ach-accent)
+  );
+  filter: blur(14px);
+  opacity: .55;
+  pointer-events: none;
+  z-index: 0;
+}
+.ach-popup.ach-popup--play .ach-popup-glow {
+  animation: achPopupGlow 4s linear infinite;
+}
+
+.ach-popup-eyebrow {
+  position: relative;
+  z-index: 1;
+  font-size: .72rem;
+  font-weight: 900;
+  letter-spacing: .32em;
+  text-transform: uppercase;
+  color: var(--ach-accent);
+  margin-bottom: 14px;
+}
+
+.ach-popup-icon {
+  position: relative;
+  z-index: 1;
+  font-size: 4.4rem;
+  line-height: 1;
+  margin: 4px auto 8px;
+  filter: drop-shadow(0 6px 20px var(--ach-shadow));
+}
+.ach-popup.ach-popup--play .ach-popup-icon {
+  animation: achPopupBadge .6s cubic-bezier(.2, 1.5, .4, 1) both;
+}
+
+.ach-popup-rarity {
+  position: relative;
+  z-index: 1;
+  display: inline-block;
+  margin: 6px auto 10px;
+  padding: 5px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--ach-ring);
+  background: linear-gradient(135deg, rgba(255, 255, 255, .12), var(--ach-soft));
+  color: var(--ach-accent);
+  font-size: .72rem;
+  font-weight: 900;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08);
+}
+
+.ach-popup-name {
+  position: relative;
+  z-index: 1;
+  font-size: 1.6rem;
+  font-weight: 900;
+  letter-spacing: -.035em;
+  line-height: 1.15;
+  margin: 4px 0 6px;
+  /* Shimmer sweep across the name. */
+  background: linear-gradient(100deg, #fff7e6 30%, var(--ach-accent) 50%, #fff7e6 70%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: achPopupShimmer 2.6s linear infinite;
+}
+
+.ach-popup-desc {
+  position: relative;
+  z-index: 1;
+  color: #e7e9f3;
+  font-size: .96rem;
+  line-height: 1.5;
+  max-width: 36ch;
+  margin: 0 auto 10px;
+}
+
+.ach-popup-more {
+  position: relative;
+  z-index: 1;
+  margin: 0 auto 12px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--ach-ring);
+  background: rgba(255, 255, 255, .05);
+  color: #fde68a;
+  font-size: .78rem;
+  font-weight: 800;
+  display: inline-block;
+}
+
+.ach-popup-hint {
+  position: relative;
+  z-index: 1;
+  margin-top: 10px;
+  color: rgba(231, 233, 243, .55);
+  font-size: .76rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+
+/* Keyframes — transform/opacity only, GPU-friendly for low-end devices. */
+@keyframes achPopupFade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes achPopupIn {
+  0%   { opacity: 0; transform: scale(.85) translateY(12px); }
+  60%  { opacity: 1; transform: scale(1.03) translateY(-2px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes achPopupBadge {
+  0%   { opacity: 0; transform: scale(.4) rotate(-18deg); }
+  60%  { opacity: 1; transform: scale(1.18) rotate(6deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0); }
+}
+
+@keyframes achPopupGlow {
+  to { transform: translateX(-50%) rotate(360deg); }
+}
+
+@keyframes achPopupShimmer {
+  to { background-position: -220% 0; }
+}
+
+/* Reduced motion: calm fade-in, no spring / rotation / shimmer. */
+@media (prefers-reduced-motion: reduce) {
+  .ach-popup-overlay {
+    animation: achPopupFade .25s ease both !important;
+  }
+  /* Force the visible end-state so the entrance never leaves the card
+     stuck at its scale(.85)/opacity:0 starting point. */
+  .ach-popup,
+  .ach-popup.ach-popup--play,
+  .ach-popup.ach-popup--play .ach-popup-glow,
+  .ach-popup.ach-popup--play .ach-popup-icon {
+    opacity: 1 !important;
+    transform: none !important;
+    animation: achPopupFade .25s ease both !important;
+  }
+  .ach-popup-name {
+    animation: none !important;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
    LEADERBOARD PAGE — Emerald Identity
    ══════════════════════════════════════════════════════════ */
 .leaderboard-header { padding: 22px; display: grid; gap: 16px; }
@@ -3121,6 +3417,35 @@ body.theme-ember .topbar::before {
   #achievementsPage .ach-progress-label {
     margin-left: auto;
   }
+
+  /* Group containers stay single-column and breathe a little less. */
+  #achievementsPage .ach-group--daily,
+  #achievementsPage .ach-group--permanent {
+    padding: 14px 12px 12px;
+  }
+  #achievementsPage .ach-group + .ach-group {
+    margin-top: 16px;
+    padding-top: 16px;
+  }
+  #achievementsPage .ach-group-heading {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  #achievementsPage .ach-group-heading h2 {
+    font-size: 1.04rem;
+  }
+
+  /* Celebration popup scales down on small screens. */
+  .ach-popup-overlay { padding: 12px; }
+  .ach-popup {
+    width: min(94vw, 380px);
+    padding: 26px 20px 18px;
+  }
+  .ach-popup-icon { font-size: 3.6rem; }
+  .ach-popup-glow { width: 140px; height: 140px; }
+  .ach-popup-name { font-size: 1.35rem; }
+  .ach-popup-desc { font-size: .9rem; }
 
   #leaderboardPage .leaderboard-podium {
     gap: 10px;

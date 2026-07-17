@@ -47,6 +47,8 @@ const els = {
   drawerBackdrop: $('drawerBackdrop'),
   closeDrawerBtn: $('closeDrawerBtn'),
   backupBtn: $('backupBtn'),
+  importBtn: $('importBtn'),
+  importFileInput: $('importFileInput'),
   clearDataBtn: $('clearDataBtn'),
   timerPage: $('timerPage'),
   analyticsPage: $('analyticsPage'),
@@ -102,6 +104,12 @@ const els = {
   achEnayatFill: $('achEnayatFill'),
   achEnayatLabel: $('achEnayatLabel'),
   achEnayatBadge: $('achEnayatBadge'),
+  achPopupOverlay: $('achPopupOverlay'),
+  achPopupIcon: $('achPopupIcon'),
+  achPopupName: $('achPopupName'),
+  achPopupRarity: $('achPopupRarity'),
+  achPopupDesc: $('achPopupDesc'),
+  achPopupMore: $('achPopupMore'),
 };
 
 const defaultState = {
@@ -151,6 +159,12 @@ const defaultState = {
     focusForge: false,
     streakFlame: false,
     noBreakBeast: false,
+    ironFocus: false,
+    unbrokenWill: false,
+    ascendant: false,
+    sharpshooter: false,
+    quizConqueror: false,
+    jeeSlayer: false,
     enayat: false
   },
   achievementDay: '',
@@ -2273,6 +2287,79 @@ const ACHIEVEMENT_DEFS = [
     metric: (m) => m.longestSession,
     label: (current, target) => `${minutesToHuman(current)} / ${minutesToHuman(target)}`
   },
+  // ── Daily challenges (re-derived from today each call, re-lock at midnight) ──
+  {
+    id: 'ironFocus',
+    name: 'Iron Focus',
+    daily: true,
+    rarity: 'rare',
+    rarityLabel: 'RARE',
+    icon: '🛡️',
+    desc: 'Study 3 hours in a single day.',
+    target: 180,
+    metric: (m) => m.todayMinutes,
+    label: (current, target) => `${minutesToHuman(current)} / ${minutesToHuman(target)}`
+  },
+  {
+    id: 'unbrokenWill',
+    name: 'Unbroken Will',
+    daily: true,
+    rarity: 'epic',
+    rarityLabel: 'EPIC',
+    icon: '⚔️',
+    desc: 'Study 5 hours in a single day.',
+    target: 300,
+    metric: (m) => m.todayMinutes,
+    label: (current, target) => `${minutesToHuman(current)} / ${minutesToHuman(target)}`
+  },
+  {
+    id: 'ascendant',
+    name: 'Ascendant',
+    daily: true,
+    rarity: 'legendary',
+    rarityLabel: 'LEGENDARY',
+    icon: '🌟',
+    desc: 'Study 6 hours in a single day.',
+    target: 360,
+    metric: (m) => m.todayMinutes,
+    label: (current, target) => `${minutesToHuman(current)} / ${minutesToHuman(target)}`
+  },
+  {
+    id: 'sharpshooter',
+    name: 'Sharpshooter',
+    daily: true,
+    rarity: 'rare',
+    rarityLabel: 'RARE',
+    icon: '🎯',
+    desc: 'Solve 30 questions in a single day.',
+    target: 30,
+    metric: (m) => m.todayQuestions,
+    label: (current, target) => `${current} / ${target} questions`
+  },
+  {
+    id: 'quizConqueror',
+    name: 'Quiz Conqueror',
+    daily: true,
+    rarity: 'epic',
+    rarityLabel: 'EPIC',
+    icon: '💎',
+    desc: 'Solve 50 questions in a single day.',
+    target: 50,
+    metric: (m) => m.todayQuestions,
+    label: (current, target) => `${current} / ${target} questions`
+  },
+  {
+    id: 'jeeSlayer',
+    name: 'JEE Slayer',
+    daily: true,
+    rarity: 'legendary',
+    rarityLabel: 'LEGENDARY',
+    icon: '⚡',
+    desc: 'Solve 70 questions in a single day.',
+    target: 70,
+    metric: (m) => m.todayQuestions,
+    label: (current, target) => `${current} / ${target} questions`
+  },
   {
     id: 'enayat',
     name: "Enayat's Challenge",
@@ -2283,7 +2370,7 @@ const ACHIEVEMENT_DEFS = [
     desc: 'Solve 100 questions in a single day.',
     target: 100,
     metric: (m) => m.todayQuestions,
-    label: (current, target) => `${current} / ${target} q`
+    label: (current, target) => `${current} / ${target} questions`
   }
 ];
 
@@ -2299,6 +2386,7 @@ function getAchievementMetrics() {
   return {
     records,
     todayRecords,
+    todayMinutes: todayRecords.reduce((a, r) => a + (Number(r.minutes) || 0), 0),
     todayQuestions: todayRecords.reduce((a, r) => a + (Number(r.questions) || 0), 0),
     totalSessions: records.length,
     totalMinutes,
@@ -2353,8 +2441,13 @@ function updateAchievements({ announce = false, persist = true } = {}) {
     const label = newlyUnlocked.length === 1
       ? `${primary.icon} ${primary.name} unlocked!`
       : `${newlyUnlocked.length} achievements unlocked!`;
-    playSound('achievement');
+    // The toast is a secondary nudge; the popup is the star.
     showToast(label, 3600, { achievement: true });
+    // Daily unlocks take priority — they're time-sensitive. If any newly
+    // unlocked def is daily, celebrate that first; otherwise the first perm.
+    const primaryDef = newlyUnlocked.find(def => def.daily) || primary;
+    const remaining = newlyUnlocked.filter(def => def !== primaryDef);
+    showAchievementPopup(primaryDef, remaining);
 
     clearTimeout(updateAchievements._t);
     updateAchievements._t = setTimeout(() => {
@@ -2364,6 +2457,37 @@ function updateAchievements({ announce = false, persist = true } = {}) {
   }
 
   return { changed, newlyUnlocked };
+}
+
+function buildAchievementCard(def, metrics, kind) {
+  const current = Number(def.metric(metrics)) || 0;
+  const target = Math.max(1, Number(def.target) || 1);
+  const pct = Math.max(0, Math.min(100, Math.round((current / target) * 100)));
+  const unlocked = Boolean(state.achievements?.[def.id]);
+  const rareClass = `rarity-${def.rarity}`;
+  const flashClass = achievementFlashIds.has(def.id) ? 'ach-just-unlocked' : '';
+  const progressLabel = def.label(current, target);
+  return `
+    <div class="ach-item ach-item--${kind} ${rareClass} ${unlocked ? 'ach-unlocked' : 'ach-locked'} ${flashClass}" data-achievement-id="${def.id}">
+      <div class="ach-icon">${def.icon}</div>
+      <div class="ach-body">
+        <div class="ach-topline">
+          <div class="ach-copy">
+            <div class="ach-name">${escapeHtml(def.name)}</div>
+            <div class="ach-desc">${escapeHtml(def.desc)}</div>
+          </div>
+          <div class="ach-rarity">${def.rarityLabel}</div>
+        </div>
+        <div class="ach-progress-wrap">
+          <div class="ach-progress-bar">
+            <div class="ach-progress-fill" style="width:${pct}%"></div>
+          </div>
+          <div class="ach-progress-label">${escapeHtml(progressLabel)}</div>
+        </div>
+      </div>
+      <div class="ach-badge">${unlocked ? '🏆' : '🔒'}</div>
+    </div>
+  `;
 }
 
 function renderAchievements() {
@@ -2379,36 +2503,78 @@ function renderAchievements() {
   }
   if (!list) return;
 
-  list.innerHTML = ACHIEVEMENT_DEFS.map(def => {
-    const current = Number(def.metric(metrics)) || 0;
-    const target = Math.max(1, Number(def.target) || 1);
-    const pct = Math.max(0, Math.min(100, Math.round((current / target) * 100)));
-    const unlocked = Boolean(state.achievements?.[def.id]);
-    const rareClass = `rarity-${def.rarity}`;
-    const flashClass = achievementFlashIds.has(def.id) ? 'ach-just-unlocked' : '';
-    const progressLabel = def.label(current, target);
-    return `
-      <div class="ach-item ${rareClass} ${unlocked ? 'ach-unlocked' : 'ach-locked'} ${flashClass}" data-achievement-id="${def.id}">
-        <div class="ach-icon">${def.icon}</div>
-        <div class="ach-body">
-          <div class="ach-topline">
-            <div class="ach-copy">
-              <div class="ach-name">${escapeHtml(def.name)}</div>
-              <div class="ach-desc">${escapeHtml(def.desc)}</div>
-            </div>
-            <div class="ach-rarity">${def.rarityLabel}</div>
-          </div>
-          <div class="ach-progress-wrap">
-            <div class="ach-progress-bar">
-              <div class="ach-progress-fill" style="width:${pct}%"></div>
-            </div>
-            <div class="ach-progress-label">${escapeHtml(progressLabel)}</div>
-          </div>
-        </div>
-        <div class="ach-badge">${unlocked ? '🏆' : '🔒'}</div>
+  // Separate Daily (priority group) vs Permanent. Order follows ACHIEVEMENT_DEFS.
+  const dailyDefs = ACHIEVEMENT_DEFS.filter(def => def.daily);
+  const permanentDefs = ACHIEVEMENT_DEFS.filter(def => !def.daily);
+
+  const dailyUnlocked = dailyDefs.reduce((n, def) => n + (state.achievements?.[def.id] ? 1 : 0), 0);
+  const permUnlocked = permanentDefs.reduce((n, def) => n + (state.achievements?.[def.id] ? 1 : 0), 0);
+
+  list.innerHTML = `
+    <section class="ach-group ach-group--daily" aria-label="Daily Challenges">
+      <div class="section-heading ach-group-heading ach-group-heading--daily">
+        <h2>☀️ Daily Challenges</h2>
+        <span>Resets at midnight · ${dailyUnlocked}/${dailyDefs.length} unlocked</span>
       </div>
-    `;
-  }).join('');
+      <div class="ach-list ach-list--daily">
+        ${dailyDefs.map(def => buildAchievementCard(def, metrics, 'daily')).join('')}
+      </div>
+    </section>
+
+    <section class="ach-group ach-group--permanent" aria-label="Permanent Milestones">
+      <div class="section-heading ach-group-heading ach-group-heading--permanent">
+        <h2>🏆 Permanent Milestones</h2>
+        <span>Unlocked forever · ${permUnlocked}/${permanentDefs.length} unlocked</span>
+      </div>
+      <div class="ach-list ach-list--permanent">
+        ${permanentDefs.map(def => buildAchievementCard(def, metrics, 'permanent')).join('')}
+      </div>
+    </section>
+  `;
+}
+
+// Full-screen celebration shown when an achievement unlocks from a logged
+// session. `extra` is an optional list of additional unlocks shown as "+N more".
+function showAchievementPopup(def, extra = []) {
+  if (!def || !els.achPopupOverlay) return;
+  const card = els.achPopupOverlay.querySelector('.ach-popup');
+  const knownRarities = ['common', 'rare', 'epic', 'legendary', 'mythic'];
+  // Paint the card with the rarity's color palette so the glow matches.
+  if (card) {
+    card.classList.remove(...knownRarities.map(r => `rarity-${r}`));
+    card.classList.add(`rarity-${def.rarity}`);
+  }
+  if (els.achPopupIcon) els.achPopupIcon.textContent = def.icon;
+  if (els.achPopupName) els.achPopupName.textContent = def.name;
+  if (els.achPopupRarity) els.achPopupRarity.textContent = def.rarityLabel;
+  if (els.achPopupDesc) els.achPopupDesc.textContent = def.desc;
+  if (els.achPopupMore) {
+    if (extra.length) {
+      els.achPopupMore.textContent = `+${extra.length} more ${extra.length === 1 ? 'unlock' : 'unlocks'}`;
+      els.achPopupMore.classList.remove('hidden');
+    } else {
+      els.achPopupMore.classList.add('hidden');
+    }
+  }
+
+  // Restart the entrance animation by toggling the play class.
+  if (card) {
+    card.classList.remove('ach-popup--play');
+    void card.offsetWidth; // force reflow so the animation replays
+    card.classList.add('ach-popup--play');
+  }
+
+  els.achPopupOverlay.classList.remove('hidden');
+  playSound('achievement');
+
+  clearTimeout(showAchievementPopup._t);
+  showAchievementPopup._t = setTimeout(hideAchievementPopup, 3500);
+}
+
+function hideAchievementPopup() {
+  if (!els.achPopupOverlay) return;
+  els.achPopupOverlay.classList.add('hidden');
+  clearTimeout(showAchievementPopup._t);
 }
 
 function renderLeaderboard() {
@@ -2625,6 +2791,71 @@ function exportBackup() {
   a.download = `jee-flow-backup-${dkey(new Date())}.json`;
   a.click();
   URL.revokeObjectURL(url);
+}
+function importBackup() {
+  // Reset so picking the same file twice still fires `change`.
+  if (!els.importFileInput) {
+    showToast('Import not available');
+    return;
+  }
+  try { els.importFileInput.value = ''; } catch {}
+  els.importFileInput.click();
+}
+function handleImportFileChange(event) {
+  const input = event && event.target;
+  const file = input && input.files && input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    let parsed;
+    try {
+      parsed = JSON.parse(String(reader.result || ''));
+    } catch (error) {
+      logCloud('error', 'Backup import failed to parse.', error);
+      showToast('Could not read backup file');
+      return;
+    }
+    // Accept either the documented { state, records } export shape or a bare
+    // array of records (useful when a user hand-edits a file).
+    const backupState = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed.state : null;
+    const incomingRecords = Array.isArray(parsed)
+      ? parsed
+      : (parsed && Array.isArray(parsed.records) ? parsed.records : null);
+    if (!incomingRecords) {
+      showToast('No records found in file');
+      return;
+    }
+    const previousRecords = getRecords();
+    const previousTombstones = normalizeDeletedRecordIds(state.deletedRecordIds);
+    const remoteTombstones = (backupState && backupState.deletedRecordIds) || {};
+    // Tombstones only ever grow — union them before merging records so a
+    // deletion known to either side always wins (same policy as cloud sync).
+    const mergedTombstones = mergeTombstones(previousTombstones, remoteTombstones);
+    const mergedRecords = mergeRecordsUnion(previousRecords, incomingRecords, mergedTombstones);
+    const addedCount = Math.max(0, mergedRecords.length - previousRecords.length);
+    if (!incomingRecords.length || (addedCount === 0 && Object.keys(mergedTombstones).length === Object.keys(previousTombstones).length)) {
+      showToast('Already up to date');
+      return;
+    }
+    if (!confirm(`Import ${addedCount} session(s) and merge with your current data?`)) return;
+    state.records = mergedRecords;
+    state.deletedRecordIds = mergedTombstones;
+    state.recordsUpdatedAt = nextRecordsUpdatedAt();
+    if (!saveState({ immediate: true, reason: 'backup-imported' })) {
+      // saveState already surfaced the storage-full toast; roll back the
+      // in-memory mutation so nothing is half-applied.
+      state.records = previousRecords;
+      state.deletedRecordIds = previousTombstones;
+      return;
+    }
+    render({ skipSave: true });
+    void refreshLeaderboard({ force: true });
+    showToast(addedCount > 0 ? `Imported ${addedCount} session(s)` : 'Backup merged');
+  };
+  reader.onerror = () => {
+    showToast('Could not read backup file');
+  };
+  reader.readAsText(file);
 }
 function clearLocalData() {
   if (!confirm('Clear all local study data on this device?')) return;
@@ -2891,6 +3122,8 @@ els.closeDrawerBtn.addEventListener('click', closeDrawer);
 els.drawerBackdrop.addEventListener('click', closeDrawer);
 els.drawer.querySelectorAll('.drawer-item[data-page]').forEach(btn => btn.addEventListener('click', () => setPage(btn.dataset.page)));
 els.backupBtn.addEventListener('click', exportBackup);
+if (els.importBtn) els.importBtn.addEventListener('click', importBackup);
+if (els.importFileInput) els.importFileInput.addEventListener('change', handleImportFileChange);
 els.clearDataBtn.addEventListener('click', clearLocalData);
 
 els.appTitle.addEventListener('click', handleTitleTap);
@@ -3017,6 +3250,10 @@ if (els.analyticsSessionModal) {
   els.analyticsSessionModal.addEventListener('click', (e) => {
     if (e.target === els.analyticsSessionModal) closeAnalyticsSessionModal();
   });
+}
+// Any tap on the celebration overlay (backdrop or card) dismisses it.
+if (els.achPopupOverlay) {
+  els.achPopupOverlay.addEventListener('click', hideAchievementPopup);
 }
 
 els.subjectChips.forEach(btn => btn.addEventListener('click', () => {

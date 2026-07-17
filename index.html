@@ -290,11 +290,11 @@
           <div>
             <div class="eyebrow">🏆 Achievements</div>
             <h2>Your badges</h2>
-            <p>Track permanent milestones and today’s challenge. New unlocks pop up as soon as you log the session that earns them.</p>
+            <p>Track permanent milestones and today’s challenges. New unlocks pop up as soon as you log the session that earns them.</p>
           </div>
           <div class="analytics-stats achievements-summary" style="grid-template-columns:repeat(2,minmax(0,1fr))">
             <div class="mini-stat"><span>Unlocked</span><strong id="achUnlockedCount">0</strong></div>
-            <div class="mini-stat"><span>Total available</span><strong id="achTotalCount">7</strong></div>
+            <div class="mini-stat"><span>Total available</span><strong id="achTotalCount">13</strong></div>
           </div>
         </div>
 
@@ -435,9 +435,13 @@
     <button class="drawer-item" id="backupBtn">
       <span class="drawer-item-icon">💾</span>Export backup
     </button>
+    <button class="drawer-item" id="importBtn">
+      <span class="drawer-item-icon">📥</span>Import backup
+    </button>
     <button class="drawer-item" id="clearDataBtn">
       <span class="drawer-item-icon">🗑</span>Clear local data
     </button>
+    <input type="file" id="importFileInput" accept="application/json,.json" hidden />
 
     <div class="about-box">
       <div class="section-heading">
@@ -526,6 +530,22 @@
 
   <!-- ── Toast ──────────────────────────────────────────── -->
   <div class="toast hidden" id="toast"></div>
+
+  <!-- ── Achievement unlock celebration overlay ─────────── -->
+  <div class="ach-popup-overlay hidden" id="achPopupOverlay"
+       role="dialog" aria-modal="true" aria-hidden="true"
+       aria-labelledby="achPopupName">
+    <div class="ach-popup" role="document">
+      <div class="ach-popup-glow" aria-hidden="true"></div>
+      <div class="ach-popup-eyebrow">ACHIEVEMENT UNLOCKED</div>
+      <div class="ach-popup-icon" id="achPopupIcon" aria-hidden="true">🏆</div>
+      <div class="ach-popup-rarity" id="achPopupRarity">COMMON</div>
+      <div class="ach-popup-name" id="achPopupName">Achievement</div>
+      <div class="ach-popup-desc" id="achPopupDesc"></div>
+      <div class="ach-popup-more hidden" id="achPopupMore"></div>
+      <div class="ach-popup-hint">tap to close</div>
+    </div>
+  </div>
 
   <!-- ── Update-available banner ─────────────────────────── -->
   <div class="update-banner hidden" id="updateBanner" role="status" aria-live="polite">
