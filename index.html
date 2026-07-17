@@ -336,7 +336,7 @@
           <div>
             <div class="eyebrow">🏅 Leaderboard</div>
             <h2>Shared progress board</h2>
-            <p>Ranked by total study minutes, then questions solved. Medals highlight the top 3 grinders.</p>
+            <p>Switch between Today, This Week, and All-time. Ranked by study minutes, then questions solved.</p>
           </div>
           <div class="analytics-stats leaderboard-summary" style="grid-template-columns:repeat(2,minmax(0,1fr))">
             <div class="mini-stat"><span>👥 Players</span><strong id="leaderboardCount">0</strong></div>
@@ -351,6 +351,27 @@
             <div class="mini-stat"><span>🥇 Top rank</span><strong>Gold</strong></div>
             <div class="mini-stat"><span>🕐 Synced</span><strong id="leaderboardUpdatedAt">—</strong></div>
           </div>
+        </div>
+
+        <div class="card leaderboard-scope-card">
+          <div class="lb-scope-bar" id="leaderboardScopeBar" role="tablist" aria-label="Leaderboard time scope">
+            <button class="lb-scope active" type="button" role="tab" aria-pressed="true"
+                    data-lb-scope="daily">
+              <span class="lb-scope-icon">📅</span>
+              <span class="lb-scope-label">Today</span>
+            </button>
+            <button class="lb-scope" type="button" role="tab" aria-pressed="false"
+                    data-lb-scope="weekly">
+              <span class="lb-scope-icon">🗓️</span>
+              <span class="lb-scope-label">This Week</span>
+            </button>
+            <button class="lb-scope" type="button" role="tab" aria-pressed="false"
+                    data-lb-scope="alltime">
+              <span class="lb-scope-icon">🏆</span>
+              <span class="lb-scope-label">All-time</span>
+            </button>
+          </div>
+          <div class="subline" id="leaderboardSubline">Today · resets at midnight</div>
         </div>
 
         <div class="card leaderboard-podium-card">
@@ -506,6 +527,12 @@
   <!-- ── Toast ──────────────────────────────────────────── -->
   <div class="toast hidden" id="toast"></div>
 
+  <!-- ── Update-available banner ─────────────────────────── -->
+  <div class="update-banner hidden" id="updateBanner" role="status" aria-live="polite">
+    <span>🔄 A new version is ready.</span>
+    <button class="primary" id="updateReloadBtn" type="button">Refresh</button>
+  </div>
+
   <!-- ── Profile modal ─────────────────────────────────── -->
   <div class="modal hidden" id="profileModal"
        role="dialog" aria-modal="true" aria-hidden="true"
@@ -530,10 +557,67 @@
   <!-- ── Scripts ────────────────────────────────────────── -->
   <script src="app.js"></script>
   <script>
+    // ── PWA update flow ──────────────────────────────────────
+    // The service worker installs new versions in the background but
+    // deliberately waits (no self.skipWaiting()) so it never yanks code
+    // out from under an open session. That means SOMETHING on this page
+    // has to notice the waiting worker, offer the person a refresh, and
+    // then tell it to take over. Previously nothing did that, so updates
+    // could sit installed-but-inactive indefinitely and the app kept
+    // running old cached JS/CSS/HTML until every tab happened to be
+    // closed and reopened — which read as "old files keep loading".
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () =>
-        navigator.serviceWorker.register('service-worker.js').catch(() => {})
-      );
+      let refreshing = false;
+      let waitingWorker = null;
+      const banner = document.getElementById('updateBanner');
+      const reloadBtn = document.getElementById('updateReloadBtn');
+
+      function showUpdateBanner(worker) {
+        waitingWorker = worker;
+        if (banner) banner.classList.remove('hidden');
+      }
+
+      if (reloadBtn) {
+        reloadBtn.addEventListener('click', () => {
+          if (waitingWorker) waitingWorker.postMessage({ type: 'SKIP_WAITING' });
+          if (banner) banner.classList.add('hidden');
+        });
+      }
+
+      // Once the new worker actually takes control, do the one reload
+      // needed to load the fresh index.html/app.js/style.css.
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (refreshing) return;
+        refreshing = true;
+        window.location.reload();
+      });
+
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('service-worker.js').then((registration) => {
+          // A worker may already be sitting in "waiting" from a previous
+          // visit (e.g. this tab was open across a deploy).
+          if (registration.waiting && navigator.serviceWorker.controller) {
+            showUpdateBanner(registration.waiting);
+          }
+
+          registration.addEventListener('updatefound', () => {
+            const installing = registration.installing;
+            if (!installing) return;
+            installing.addEventListener('statechange', () => {
+              // Only prompt for an in-place UPDATE (there's already a
+              // controller). On the very first install for a new visitor
+              // there's nothing to refresh yet — it just activates normally.
+              if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+                showUpdateBanner(installing);
+              }
+            });
+          });
+
+          // Catch deploys that happen while the tab is left open for a
+          // long time, since browsers only check for updates on navigation.
+          setInterval(() => { registration.update().catch(() => {}); }, 60 * 60 * 1000);
+        }).catch(() => {});
+      });
     }
   </script>
 </body>

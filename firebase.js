@@ -371,11 +371,24 @@ export async function pushLeaderboardStats(profile, stats, options = {}) {
     const ref = firestoreMod.doc(db, LEADERBOARD_COLLECTION, docId);
     const userGenerationRef = firestoreMod.doc(db, USER_GENERATION_COLLECTION, docId);
     const configRef = firestoreMod.doc(db, METADATA_COLLECTION, SYNC_CONFIG_DOC_ID);
+    // Daily & weekly projections ride on the same leaderboard doc. They are a
+    // projection of the authoritative record set, just like the all-time
+    // totals — a row belongs to today's board iff its dailyKey matches today,
+    // so boards roll over at midnight / Monday with zero scheduled work.
+    // Older docs that pre-date these fields simply keep working: they just
+    // won't surface in the daily/weekly boards until their owner re-syncs.
+    const periods = options.periods || {};
     const payload = {
       clientId: String(options.clientId || ''),
       name: String(profile && profile.name || 'Student').trim().slice(0, 40) || 'Student',
       totalMinutes: Math.max(0, Math.round(Number(stats && stats.totalMinutes) || 0)),
       totalQuestions: Math.max(0, Math.round(Number(stats && stats.totalQuestions) || 0)),
+      dailyKey: String(periods.dailyKey || ''),
+      dailyMinutes: Math.max(0, Math.round(Number(periods.dailyMinutes) || 0)),
+      dailyQuestions: Math.max(0, Math.round(Number(periods.dailyQuestions) || 0)),
+      weekKey: String(periods.weekKey || ''),
+      weeklyMinutes: Math.max(0, Math.round(Number(periods.weeklyMinutes) || 0)),
+      weeklyQuestions: Math.max(0, Math.round(Number(periods.weeklyQuestions) || 0)),
       updatedAt: Number(options.updatedAt || Date.now()) || Date.now(),
       recordsUpdatedAt: Math.max(0, Number(options.recordsUpdatedAt || 0) || 0),
       app: APP_NAME
@@ -558,6 +571,12 @@ export async function pullLeaderboardStats(limit = 50) {
         name: String(data.name || 'Student').trim() || 'Student',
         totalMinutes: Math.max(0, Math.round(Number(data.totalMinutes) || 0)),
         totalQuestions: Math.max(0, Math.round(Number(data.totalQuestions) || 0)),
+        dailyKey: String(data.dailyKey || ''),
+        dailyMinutes: Math.max(0, Math.round(Number(data.dailyMinutes) || 0)),
+        dailyQuestions: Math.max(0, Math.round(Number(data.dailyQuestions) || 0)),
+        weekKey: String(data.weekKey || ''),
+        weeklyMinutes: Math.max(0, Math.round(Number(data.weeklyMinutes) || 0)),
+        weeklyQuestions: Math.max(0, Math.round(Number(data.weeklyQuestions) || 0)),
         updatedAt: Number(data.updatedAt || 0) || 0
       });
     });

@@ -1076,6 +1076,98 @@ body {
   box-shadow: 0 0 6px #10b981;
 }
 
+/* Scope toggle bar — 3 segments (Today / This Week / All-time) */
+.leaderboard-scope-card {
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.lb-scope-bar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 5px;
+  border-radius: var(--r-lg);
+  background: rgba(16, 185, 129, .06);
+  border: 1px solid rgba(16, 185, 129, .16);
+}
+
+.lb-scope {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 800;
+  font-size: .9rem;
+  padding: 10px 8px;
+  border-radius: var(--r-md);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  transition:
+    background var(--motion-fast, .18s) ease,
+    color var(--motion-fast, .18s) ease,
+    box-shadow var(--motion-fast, .18s) ease,
+    border-color var(--motion-fast, .18s) ease;
+  white-space: nowrap;
+}
+
+.lb-scope:hover {
+  background: rgba(16, 185, 129, .12);
+  color: var(--pa-text);
+}
+
+.lb-scope:focus-visible {
+  outline: 2px solid rgba(16, 185, 129, .55);
+  outline-offset: 2px;
+}
+
+.lb-scope.active {
+  background: linear-gradient(135deg, rgba(16, 185, 129, .32), rgba(16, 185, 129, .18));
+  border-color: rgba(16, 185, 129, .45);
+  color: #ecfdf5;
+  box-shadow:
+    0 0 18px rgba(16, 185, 129, .22),
+    inset 1px 1px rgba(255, 255, 255, .08);
+}
+
+.lb-scope-icon { font-size: 1rem; line-height: 1; }
+.lb-scope-label { line-height: 1; }
+
+/* "You" highlight — surfaces the signed-in user's own row & podium card */
+.you-pill {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, .22);
+  border: 1px solid rgba(16, 185, 129, .42);
+  color: #ecfdf5;
+  font-size: .62rem;
+  font-weight: 900;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.leaderboard-row.is-you {
+  background: rgba(16, 185, 129, .12) !important;
+  border-color: rgba(16, 185, 129, .40) !important;
+  box-shadow: 0 0 16px rgba(16, 185, 129, .18);
+}
+
+#leaderboardPage .podium-card.is-you {
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, .38),
+    0 0 26px rgba(16, 185, 129, .35),
+    inset 1px 1px rgba(255, 255, 255, .10) !important;
+}
+
 /* Podium */
 .leaderboard-podium-card,
 .leaderboard-list-card { padding: 20px; display: grid; gap: 14px; }
@@ -1438,6 +1530,33 @@ body {
   animation: achievementToastPop .42s cubic-bezier(.16,.92,.22,1) both;
 }
 
+/* ── Update-available banner ─────────────────────────────── */
+.update-banner {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: rgba(13,20,42,.98);
+  border: 1px solid rgba(139,92,246,.35);
+  border-radius: 999px;
+  padding: 10px 10px 10px 20px;
+  color: #e8f0fc;
+  font-weight: 800;
+  font-size: .9rem;
+  box-shadow: 0 16px 48px rgba(0,0,0,.5), 0 0 22px rgba(139,92,246,.20);
+  animation: toastIn .28s cubic-bezier(.2,.8,.2,1) both;
+  white-space: nowrap;
+}
+.update-banner button.primary {
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: .85rem;
+}
+
 /* ══════════════════════════════════════════════════════════
    KEYFRAME ANIMATIONS
    ══════════════════════════════════════════════════════════ */
@@ -1544,6 +1663,9 @@ body {
   .controls { grid-template-columns: 1fr 1fr; }
   .graph-wrap { min-height: 240px; }
   .bar-wrap { height: 160px; }
+  /* Scope bar: keep all three segments reachable; tighten padding + font */
+  .lb-scope { padding: 9px 4px; font-size: .82rem; gap: 5px; }
+  .lb-scope-icon { font-size: .92rem; }
   .ach-item { gap: 12px; padding: 16px 14px; }
   .ach-icon { width: 46px; height: 46px; font-size: 1.7rem; }
   .detail-split { grid-template-columns: 1fr; }

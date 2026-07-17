@@ -23,6 +23,8 @@ const els = {
   leaderboardUpdatedAt: $('leaderboardUpdatedAt'),
   leaderboardCount: $('leaderboardCount'),
   leaderboardPodium: $('leaderboardPodium'),
+  leaderboardSubline: $('leaderboardSubline'),
+  leaderboardScopeBar: $('leaderboardScopeBar'),
   leaderboardPage: $('leaderboardPage'),
   achievementsPage: $('achievementsPage'),
   settingsPage: $('settingsPage'),
@@ -113,7 +115,6 @@ const defaultState = {
   noBreakMode: false,
   currentMode: 'focus',
   cycleCount: 1,
-  accumulatedFocusSeconds: 0,
   running: false,
   remaining: 25 * 60,
   total: 25 * 60,
@@ -123,6 +124,11 @@ const defaultState = {
   page: 'timer',
   analyticsView: 'weekly',
   analyticsSelections: { weekly: -1, monthly: -1 },
+  // Which leaderboard scope is active on the Leaderboard page:
+  // 'daily' (today), 'weekly' (Mon–Sun), or 'alltime'. Defaults to 'daily' so
+  // the freshest competition shows first; older saved state without this field
+  // is normalized to 'daily'.
+  leaderboardScope: 'daily',
   titleTapCount: 0,
   lastSubject: 'Physics',
   pendingSession: null,
@@ -265,7 +271,6 @@ function getCloudSafeState() {
   snapshot.records = getRecords().map(record => ({ ...record }));
   snapshot.deletedRecordIds = { ...normalizeDeletedRecordIds(state.deletedRecordIds) };
   snapshot.recordsUpdatedAt = Number(state.recordsUpdatedAt || 0) || 0;
-  snapshot.accumulatedFocusSeconds = 0;
   snapshot.cloudStateGeneration = Math.max(0, Number(state.cloudStateGeneration || 0) || 0);
   snapshot.analyticsSelections = { ...(state.analyticsSelections || { weekly: -1, monthly: -1 }) };
   snapshot.achievements = { ...(state.achievements || cloneDefaultState().achievements) };
@@ -535,9 +540,25 @@ async function pushCloudStateNow(reason = 'state-change', generationOverride = n
 }
 function getStudyTotals() {
   const recs = getRecords();
+  // Daily projection: records whose date-key is today.
+  const dailyKey = dkey(new Date());
+  const dailyRecs = recs.filter(r => r.date === dailyKey);
+  // Weekly projection: records whose date falls inside the current
+  // Monday-aligned week (startOfWeek .. startOfWeek + 6 days, inclusive).
+  const weekStart = startOfWeek(new Date());
+  const weekEnd = addDays(weekStart, 6);
+  const weekStartKey = dkey(weekStart);
+  const weekEndKey = dkey(weekEnd);
+  const weeklyRecs = recs.filter(r => r.date >= weekStartKey && r.date <= weekEndKey);
   return {
     totalMinutes: recs.reduce((a, r) => a + (Number(r.minutes) || 0), 0),
-    totalQuestions: recs.reduce((a, r) => a + (Number(r.questions) || 0), 0)
+    totalQuestions: recs.reduce((a, r) => a + (Number(r.questions) || 0), 0),
+    dailyKey,
+    dailyMinutes: dailyRecs.reduce((a, r) => a + (Number(r.minutes) || 0), 0),
+    dailyQuestions: dailyRecs.reduce((a, r) => a + (Number(r.questions) || 0), 0),
+    weekKey: weekStartKey,
+    weeklyMinutes: weeklyRecs.reduce((a, r) => a + (Number(r.minutes) || 0), 0),
+    weeklyQuestions: weeklyRecs.reduce((a, r) => a + (Number(r.questions) || 0), 0)
   };
 }
 async function syncLeaderboardNow(reason = 'state-change', generationOverride = null) {
@@ -563,6 +584,15 @@ async function syncLeaderboardNow(reason = 'state-change', generationOverride = 
     updatedAt: Number(state.updatedAt || Date.now()) || Date.now(),
     recordsUpdatedAt: localRecordsUpdatedAt,
     reason,
+    // Daily/weekly projections ride on the same doc as the all-time totals.
+    periods: {
+      dailyKey: stats.dailyKey,
+      dailyMinutes: stats.dailyMinutes,
+      dailyQuestions: stats.dailyQuestions,
+      weekKey: stats.weekKey,
+      weeklyMinutes: stats.weeklyMinutes,
+      weeklyQuestions: stats.weeklyQuestions
+    },
     generation: {
       leaderboardGeneration: generation.leaderboardGeneration,
       userGeneration: generation.userGeneration
@@ -628,7 +658,6 @@ function applyCloudSnapshot(remoteState, remoteUpdatedAt, source = 'remote', rem
     cycleCount: state.cycleCount,
     timerCheckpoint: state.timerCheckpoint,
     pendingSession: state.pendingSession,
-    accumulatedFocusSeconds: state.accumulatedFocusSeconds,
     page: state.page,
   };
 
@@ -963,6 +992,9 @@ function normalizeState(nextState) {
   const normalized = { ...cloneDefaultState(), ...(nextState && typeof nextState === 'object' ? nextState : {}) };
   normalized.currentMode = ['focus', 'short', 'long'].includes(normalized.currentMode) ? normalized.currentMode : 'focus';
   normalized.analyticsView = normalized.analyticsView === 'monthly' ? 'monthly' : 'weekly';
+  normalized.leaderboardScope = ['daily', 'weekly', 'alltime'].includes(normalized.leaderboardScope)
+    ? normalized.leaderboardScope
+    : 'daily';
   normalized.page = ['timer', 'analytics', 'settings', 'leaderboard', 'achievements'].includes(normalized.page) ? normalized.page : 'timer';
   normalized.lastSubject = safeSubject(normalized.lastSubject);
   normalized.analyticsSelections = {
@@ -991,7 +1023,6 @@ function normalizeState(nextState) {
   );
   normalized.cloudStateGeneration = Math.max(0, Number(normalized.cloudStateGeneration || 0) || 0);
   normalized.cycleCount = Math.max(1, Math.min(999, Number.parseInt(normalized.cycleCount, 10) || 1));
-  normalized.accumulatedFocusSeconds = Math.max(0, Math.floor(Number(normalized.accumulatedFocusSeconds || 0) || 0));
   normalized.running = Boolean(normalized.running);
   normalized.pendingSession = normalizePendingSession(normalized.pendingSession);
   normalized.timerCheckpoint = normalizeTimerCheckpoint(normalized.timerCheckpoint);
@@ -1482,9 +1513,6 @@ function advanceNoBreakTimerFromCheckpoint(elapsedWall) {
   let cycleCount = Math.max(1, Number.parseInt(checkpoint.cycleCount, 10) || state.cycleCount || 1);
   let remaining = Math.max(0, Number(checkpoint.remaining) || state.remaining || total);
   let elapsed = Math.max(0, Math.floor(Number(elapsedWall) || 0));
-  if (elapsed > 0) {
-    state.accumulatedFocusSeconds = Math.max(0, Number(state.accumulatedFocusSeconds || 0)) + elapsed;
-  }
 
   // If the timer hit 00:00 before the checkpoint was saved, advance into the
   // next continuous focus block immediately. In no-break mode there is no
@@ -1777,8 +1805,15 @@ function getCurrentFocusProgressMinutes() {
 }
 
 function getContinuousSessionMinutes() {
-  const trackedSeconds = Math.max(0, Math.floor(Number(state.accumulatedFocusSeconds || 0) || 0));
-  return Math.max(1, Math.round(trackedSeconds / 60));
+  const focusSeconds = Math.max(60, secondsForMode('focus'));
+  const checkpointRemaining = state.running && state.timerCheckpoint && Number.isFinite(Number(state.timerCheckpoint.remaining))
+    ? Math.max(0, Number(state.timerCheckpoint.remaining) || 0)
+    : Math.max(0, Number(state.remaining) || 0);
+  const completedCycles = Math.max(0, Math.round(Number(state.cycleCount) || 1) - 1);
+  const currentSeconds = state.currentMode === 'focus'
+    ? Math.max(0, focusSeconds - checkpointRemaining)
+    : 0;
+  return Math.max(1, Math.round((completedCycles * focusSeconds + currentSeconds) / 60));
 }
 function savePendingSession() {
   if (!state.pendingSession || savingSession) return;
@@ -1800,11 +1835,7 @@ function savePendingSession() {
       minutes: recordedMinutes,
       date: state.pendingSession.sessionDate || dkey(new Date())
     });
-    if (isContinuous) {
-      state.accumulatedFocusSeconds = 0;
-    } else {
-      advanceCycleAfterFocus(completedRound);
-    }
+    if (!isContinuous) advanceCycleAfterFocus(completedRound);
     saved = true;
     playSound('save');
     showToast(subject === 'Physics' ? 'Physics logged' : `${subject} saved`);
@@ -2383,8 +2414,74 @@ function renderAchievements() {
 function renderLeaderboard() {
   if (!els.leaderboardList) return;
 
-  const rows = Array.isArray(leaderboardRows) ? leaderboardRows : [];
+  const scope = ['daily', 'weekly', 'alltime'].includes(state.leaderboardScope)
+    ? state.leaderboardScope
+    : 'daily';
+  const todayKey = dkey(new Date());
+  const thisWeekKey = dkey(startOfWeek(new Date()));
+
+  // Reflect the active toggle on the scope bar.
+  document.querySelectorAll('[data-lb-scope]').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.lbScope === scope);
+    btn.setAttribute('aria-pressed', String(btn.dataset.lbScope === scope));
+  });
+
+  // Project each raw row onto the active scope. Daily/weekly rows only count
+  // when their period key matches today / this week — that's what makes the
+  // boards roll over at midnight and on Monday without any scheduled reset.
+  const myNameKey = (normalizeProfile(state.profile || loadProfile()).name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+  const projected = (Array.isArray(leaderboardRows) ? leaderboardRows : [])
+    .map((row) => {
+      let minutes = 0;
+      let questions = 0;
+      let inPeriod = true;
+      if (scope === 'daily') {
+        minutes = Number(row.dailyMinutes) || 0;
+        questions = Number(row.dailyQuestions) || 0;
+        inPeriod = String(row.dailyKey || '') === todayKey && (minutes > 0 || questions > 0);
+      } else if (scope === 'weekly') {
+        minutes = Number(row.weeklyMinutes) || 0;
+        questions = Number(row.weeklyQuestions) || 0;
+        inPeriod = String(row.weekKey || '') === thisWeekKey && (minutes > 0 || questions > 0);
+      } else {
+        minutes = Number(row.totalMinutes) || 0;
+        questions = Number(row.totalQuestions) || 0;
+        inPeriod = minutes > 0 || questions > 0;
+      }
+      const nameKey = (String(row.name || 'Student').trim() || 'Student').toLowerCase().replace(/\s+/g, ' ');
+      return {
+        name: String(row.name || 'Student').trim() || 'Student',
+        minutes: Math.max(0, Math.round(minutes)),
+        questions: Math.max(0, Math.round(questions)),
+        updatedAt: Number(row.updatedAt || 0) || 0,
+        inPeriod,
+        isYou: Boolean(myNameKey) && nameKey === myNameKey
+      };
+    })
+    .filter((row) => row.inPeriod);
+
+  projected.sort((a, b) => {
+    if (b.minutes !== a.minutes) return b.minutes - a.minutes;
+    if (b.questions !== a.questions) return b.questions - a.questions;
+    return b.updatedAt - a.updatedAt;
+  });
+
+  const rows = projected;
   const topRows = rows.slice(0, 3);
+
+  // Scope-aware subline + reset hint, shown on the scope bar card.
+  if (els.leaderboardSubline) {
+    if (scope === 'daily') {
+      els.leaderboardSubline.textContent = `Today · resets at midnight`;
+    } else if (scope === 'weekly') {
+      els.leaderboardSubline.textContent = `This week (Mon–Sun) · resets Monday`;
+    } else {
+      els.leaderboardSubline.textContent = `All-time totals`;
+    }
+  }
 
   if (els.leaderboardCount) {
     els.leaderboardCount.textContent = `${rows.length} player${rows.length === 1 ? '' : 's'}`;
@@ -2395,21 +2492,29 @@ function renderLeaderboard() {
       : 'Live';
   }
 
+  const emptyMessages = {
+    daily: 'No focus logged today yet — be the first 🔥',
+    weekly: 'No focus logged this week yet — get ahead early 🚀',
+    alltime: 'No leaderboard data yet — study hard!'
+  };
+  const emptyMsg = emptyMessages[scope];
+
   if (els.leaderboardPodium) {
     if (!topRows.length) {
-      els.leaderboardPodium.innerHTML = '<div class="podium-empty">No leaderboard data yet</div>';
+      els.leaderboardPodium.innerHTML = `<div class="podium-empty">${emptyMsg}</div>`;
     } else {
       const placeLabels = ['1st', '2nd', '3rd'];
       const medals = ['🥇', '🥈', '🥉'];
       els.leaderboardPodium.innerHTML = topRows.map((row, index) => {
-        const name = escapeHtml(String(row.name || 'Student').trim() || 'Student');
-        const hours = minutesToHuman(Math.round(Number(row.totalMinutes) || 0));
-        const questions = Number(row.totalQuestions) || 0;
+        const name = escapeHtml(row.name);
+        const youTag = row.isYou ? ' <span class="you-pill">You</span>' : '';
+        const hours = minutesToHuman(row.minutes);
+        const questions = row.questions;
         const position = index + 1;
         return `
-          <div class="podium-card place-${position}">
+          <div class="podium-card place-${position}${row.isYou ? ' is-you' : ''}">
             <div class="podium-rank">${medals[index]} ${placeLabels[index]}</div>
-            <div class="podium-name">${name}</div>
+            <div class="podium-name">${name}${youTag}</div>
             <div class="podium-meta">${hours} · ${questions} q</div>
           </div>
         `;
@@ -2418,18 +2523,20 @@ function renderLeaderboard() {
   }
 
   if (!rows.length) {
-    els.leaderboardList.innerHTML = '<div class="mini-line leaderboard-empty-row"><span>No leaderboard data yet</span><strong>0h</strong></div>';
+    els.leaderboardList.innerHTML = `<div class="mini-line leaderboard-empty-row"><span>${emptyMsg}</span><strong>0m</strong></div>`;
     return;
   }
 
   els.leaderboardList.innerHTML = rows.map((row, index) => {
-    const name = escapeHtml(String(row.name || 'Student').trim() || 'Student');
-    const hours = minutesToHuman(Math.round(Number(row.totalMinutes) || 0));
-    const questions = Number(row.totalQuestions) || 0;
+    const name = escapeHtml(row.name);
+    const youTag = row.isYou ? ' <span class="you-pill">You</span>' : '';
+    const hours = minutesToHuman(row.minutes);
+    const questions = row.questions;
     const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
     const rankLabel = medal ? `${medal} ${index + 1}` : `${index + 1}`;
     const rowClass = index < 3 ? ` rank-${index + 1}` : '';
-    return `<div class="mini-line leaderboard-row${rowClass}"><span>${rankLabel}. ${name}</span><strong>${hours} · ${questions} q</strong></div>`;
+    const youClass = row.isYou ? ' is-you' : '';
+    return `<div class="mini-line leaderboard-row${rowClass}${youClass}"><span>${rankLabel}. ${name}${youTag}</span><strong>${hours} · ${questions} q</strong></div>`;
   }).join('');
 }
 function openProfileModal() {
@@ -2549,6 +2656,13 @@ function setAnalyticsView(view) {
   saveState();
   document.querySelectorAll('.tab[data-analytics-view]').forEach(btn => btn.classList.toggle('active', btn.dataset.analyticsView === state.analyticsView));
   renderAnalytics();
+}
+function setLeaderboardScope(scope) {
+  state.leaderboardScope = ['daily', 'weekly', 'alltime'].includes(scope) ? scope : 'daily';
+  saveState();
+  renderLeaderboard();
+  // Pull fresh rows so the newly-selected scope reflects the latest cloud data.
+  void refreshLeaderboard({ force: true });
 }
 function sanitizeNumbers() {
   state.focus = Math.max(1, Math.min(60, Number.isFinite(Number(state.focus)) ? Number(state.focus) : 25));
@@ -2800,6 +2914,7 @@ els.skipBtn.addEventListener('click', () => {
   if (state.currentMode === 'focus') {
     const completedRound = state.cycleCount;
     if (state.noBreakMode) {
+      state.cycleCount = Math.max(1, Number(state.cycleCount) || 1) + 1;
       state.currentMode = 'focus';
       state.remaining = secondsForMode('focus');
       state.total = state.remaining;
@@ -2823,7 +2938,6 @@ els.resetBtn.addEventListener('click', () => {
   pauseTimer();
   state.currentMode = 'focus';
   state.cycleCount = 1;
-  state.accumulatedFocusSeconds = 0;
   state.pendingSession = null;
   timerPerfStamp = 0;
   state.remaining = secondsForMode('focus');
@@ -2918,6 +3032,9 @@ els.subjectChips.forEach(btn => btn.addEventListener('click', () => {
 document.querySelectorAll('.tab[data-analytics-view]').forEach(btn => {
   btn.addEventListener('click', () => setAnalyticsView(btn.dataset.analyticsView));
 });
+document.querySelectorAll('[data-lb-scope]').forEach(btn => {
+  btn.addEventListener('click', () => setLeaderboardScope(btn.dataset.lbScope));
+});
 if (els.graphArea) {
   els.graphArea.addEventListener('click', (event) => {
     const node = event.target.closest('.day-col[data-chart-index]');
@@ -2996,9 +3113,6 @@ function tick() {
 
   if (elapsed > 0) {
     state.remaining -= elapsed;
-    if (state.currentMode === 'focus' && state.noBreakMode) {
-      state.accumulatedFocusSeconds = Math.max(0, Number(state.accumulatedFocusSeconds || 0)) + elapsed;
-    }
     timerPerfStamp = last + (elapsed * 1000);
   } else if (!timerPerfStamp) {
     timerPerfStamp = now;
