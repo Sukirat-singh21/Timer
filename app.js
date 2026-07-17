@@ -113,6 +113,7 @@ const defaultState = {
   noBreakMode: false,
   currentMode: 'focus',
   cycleCount: 1,
+  accumulatedFocusSeconds: 0,
   running: false,
   remaining: 25 * 60,
   total: 25 * 60,
@@ -264,6 +265,7 @@ function getCloudSafeState() {
   snapshot.records = getRecords().map(record => ({ ...record }));
   snapshot.deletedRecordIds = { ...normalizeDeletedRecordIds(state.deletedRecordIds) };
   snapshot.recordsUpdatedAt = Number(state.recordsUpdatedAt || 0) || 0;
+  snapshot.accumulatedFocusSeconds = 0;
   snapshot.cloudStateGeneration = Math.max(0, Number(state.cloudStateGeneration || 0) || 0);
   snapshot.analyticsSelections = { ...(state.analyticsSelections || { weekly: -1, monthly: -1 }) };
   snapshot.achievements = { ...(state.achievements || cloneDefaultState().achievements) };
@@ -626,6 +628,7 @@ function applyCloudSnapshot(remoteState, remoteUpdatedAt, source = 'remote', rem
     cycleCount: state.cycleCount,
     timerCheckpoint: state.timerCheckpoint,
     pendingSession: state.pendingSession,
+    accumulatedFocusSeconds: state.accumulatedFocusSeconds,
     page: state.page,
   };
 
@@ -988,6 +991,7 @@ function normalizeState(nextState) {
   );
   normalized.cloudStateGeneration = Math.max(0, Number(normalized.cloudStateGeneration || 0) || 0);
   normalized.cycleCount = Math.max(1, Math.min(999, Number.parseInt(normalized.cycleCount, 10) || 1));
+  normalized.accumulatedFocusSeconds = Math.max(0, Math.floor(Number(normalized.accumulatedFocusSeconds || 0) || 0));
   normalized.running = Boolean(normalized.running);
   normalized.pendingSession = normalizePendingSession(normalized.pendingSession);
   normalized.timerCheckpoint = normalizeTimerCheckpoint(normalized.timerCheckpoint);
@@ -1478,6 +1482,9 @@ function advanceNoBreakTimerFromCheckpoint(elapsedWall) {
   let cycleCount = Math.max(1, Number.parseInt(checkpoint.cycleCount, 10) || state.cycleCount || 1);
   let remaining = Math.max(0, Number(checkpoint.remaining) || state.remaining || total);
   let elapsed = Math.max(0, Math.floor(Number(elapsedWall) || 0));
+  if (elapsed > 0) {
+    state.accumulatedFocusSeconds = Math.max(0, Number(state.accumulatedFocusSeconds || 0)) + elapsed;
+  }
 
   // If the timer hit 00:00 before the checkpoint was saved, advance into the
   // next continuous focus block immediately. In no-break mode there is no
@@ -1770,15 +1777,8 @@ function getCurrentFocusProgressMinutes() {
 }
 
 function getContinuousSessionMinutes() {
-  const focusSeconds = Math.max(60, secondsForMode('focus'));
-  const checkpointRemaining = state.running && state.timerCheckpoint && Number.isFinite(Number(state.timerCheckpoint.remaining))
-    ? Math.max(0, Number(state.timerCheckpoint.remaining) || 0)
-    : Math.max(0, Number(state.remaining) || 0);
-  const completedCycles = Math.max(0, Math.round(Number(state.cycleCount) || 1) - 1);
-  const currentSeconds = state.currentMode === 'focus'
-    ? Math.max(0, focusSeconds - checkpointRemaining)
-    : 0;
-  return Math.max(1, Math.round((completedCycles * focusSeconds + currentSeconds) / 60));
+  const trackedSeconds = Math.max(0, Math.floor(Number(state.accumulatedFocusSeconds || 0) || 0));
+  return Math.max(1, Math.round(trackedSeconds / 60));
 }
 function savePendingSession() {
   if (!state.pendingSession || savingSession) return;
@@ -1800,7 +1800,11 @@ function savePendingSession() {
       minutes: recordedMinutes,
       date: state.pendingSession.sessionDate || dkey(new Date())
     });
-    if (!isContinuous) advanceCycleAfterFocus(completedRound);
+    if (isContinuous) {
+      state.accumulatedFocusSeconds = 0;
+    } else {
+      advanceCycleAfterFocus(completedRound);
+    }
     saved = true;
     playSound('save');
     showToast(subject === 'Physics' ? 'Physics logged' : `${subject} saved`);
@@ -2796,7 +2800,6 @@ els.skipBtn.addEventListener('click', () => {
   if (state.currentMode === 'focus') {
     const completedRound = state.cycleCount;
     if (state.noBreakMode) {
-      state.cycleCount = Math.max(1, Number(state.cycleCount) || 1) + 1;
       state.currentMode = 'focus';
       state.remaining = secondsForMode('focus');
       state.total = state.remaining;
@@ -2820,6 +2823,7 @@ els.resetBtn.addEventListener('click', () => {
   pauseTimer();
   state.currentMode = 'focus';
   state.cycleCount = 1;
+  state.accumulatedFocusSeconds = 0;
   state.pendingSession = null;
   timerPerfStamp = 0;
   state.remaining = secondsForMode('focus');
@@ -2992,6 +2996,9 @@ function tick() {
 
   if (elapsed > 0) {
     state.remaining -= elapsed;
+    if (state.currentMode === 'focus' && state.noBreakMode) {
+      state.accumulatedFocusSeconds = Math.max(0, Number(state.accumulatedFocusSeconds || 0)) + elapsed;
+    }
     timerPerfStamp = last + (elapsed * 1000);
   } else if (!timerPerfStamp) {
     timerPerfStamp = now;
