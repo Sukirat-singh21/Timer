@@ -13,12 +13,14 @@ const CLOUD_SYNC_RETRY_BASE_MS = 2000;
 const CLOUD_SYNC_RETRY_MAX_MS = 60000;
 
 const els = {
-  menuBtn: $('menuBtn'),
-  aboutBtn: $('aboutBtn'),
+  tabPill: $('tabPill'),
   profileModal: $('profileModal'),
   profileInput: $('profileInput'),
   profileSaveBtn: $('profileSaveBtn'),
   profileName: $('profileName'),
+  profilePageName: $('profilePageName'),
+  profilePanel: $('profilePanel'),
+  changeProfileBtn: $('changeProfileBtn'),
   leaderboardList: $('leaderboardList'),
   leaderboardUpdatedAt: $('leaderboardUpdatedAt'),
   leaderboardCount: $('leaderboardCount'),
@@ -26,6 +28,7 @@ const els = {
   leaderboardSubline: $('leaderboardSubline'),
   leaderboardScopeBar: $('leaderboardScopeBar'),
   leaderboardPage: $('leaderboardPage'),
+  otherPage: $('otherPage'),
   achievementsPage: $('achievementsPage'),
   settingsPage: $('settingsPage'),
   settingsFocusInput: $('settingsFocusInput'),
@@ -43,9 +46,6 @@ const els = {
   settingsResetBtn: $('settingsResetBtn'),
   sessionModalDescription: $('sessionModalDescription'),
   sessionDuration: $('sessionDuration'),
-  drawer: $('drawer'),
-  drawerBackdrop: $('drawerBackdrop'),
-  closeDrawerBtn: $('closeDrawerBtn'),
   backupBtn: $('backupBtn'),
   importBtn: $('importBtn'),
   importFileInput: $('importFileInput'),
@@ -130,6 +130,9 @@ const defaultState = {
   records: [],
   deletedRecordIds: {},
   page: 'timer',
+  otherView: 'settings',
+  settingsView: 'timer',
+  achievementView: 'daily',
   analyticsView: 'weekly',
   analyticsSelections: { weekly: -1, monthly: -1 },
   // Which leaderboard scope is active on the Leaderboard page:
@@ -520,7 +523,7 @@ async function hydrateProfileFromCloud() {
     localStorage.setItem(PROFILE_KEY, JSON.stringify(state.profile));
   } catch {}
   saveState({ immediate: true, reason: 'profile-hydrated' });
-  if (els.profileName) els.profileName.textContent = normalizedRemote.name;
+  updateProfileLabels();
   if (els.profileModal) closeProfileModal(true);
   render({ skipSave: true });
   return normalizedRemote;
@@ -874,6 +877,35 @@ async function reconcileCloudState(options = {}) {
   return changed;
 }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+/* Lock background scroll while any modal/overlay is open. Locks BOTH <html>
+   and <body> because iOS Safari scrolls via <html> while most other engines
+   scroll via <body>. Also captures/restores the scroll position so closing
+   the modal returns the user to exactly where they were. */
+let __scrollLockOpenCount = 0;
+let __savedScrollY = 0;
+function setScrollLock(on) {
+  if (on) {
+    if (__scrollLockOpenCount === 0) {
+      __savedScrollY = window.scrollY || window.pageYOffset || 0;
+    }
+    __scrollLockOpenCount++;
+    document.documentElement.classList.add('modal-open');
+    document.body.classList.add('modal-open');
+    // Nudge the page back to the top of the viewport so the fixed overlay
+    // stays centered without a blank gap where the content used to be.
+    if (__scrollLockOpenCount === 1) {
+      window.scrollTo(0, 0);
+    }
+  } else {
+    __scrollLockOpenCount = Math.max(0, __scrollLockOpenCount - 1);
+    if (__scrollLockOpenCount === 0) {
+      document.documentElement.classList.remove('modal-open');
+      document.body.classList.remove('modal-open');
+      window.scrollTo(0, __savedScrollY || 0);
+    }
+  }
+}
 function fmt(sec) {
   sec = Math.max(0, Math.round(sec));
   return `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
@@ -1009,7 +1041,13 @@ function normalizeState(nextState) {
   normalized.leaderboardScope = ['daily', 'weekly', 'alltime'].includes(normalized.leaderboardScope)
     ? normalized.leaderboardScope
     : 'daily';
-  normalized.page = ['timer', 'analytics', 'settings', 'leaderboard', 'achievements'].includes(normalized.page) ? normalized.page : 'timer';
+  // Legacy settings/achievements destinations now live in the consolidated
+  // Other page, so synced state keeps the person in the relevant area.
+  normalized.page = ['settings', 'achievements'].includes(normalized.page) ? 'other' : normalized.page;
+  normalized.page = ['timer', 'analytics', 'leaderboard', 'other'].includes(normalized.page) ? normalized.page : 'timer';
+  normalized.otherView = ['profile', 'settings', 'achievements', 'data'].includes(normalized.otherView) ? normalized.otherView : 'settings';
+  normalized.settingsView = ['timer', 'flow', 'appearance'].includes(normalized.settingsView) ? normalized.settingsView : 'timer';
+  normalized.achievementView = ['daily', 'permanent', 'guide'].includes(normalized.achievementView) ? normalized.achievementView : 'daily';
   normalized.lastSubject = safeSubject(normalized.lastSubject);
   normalized.analyticsSelections = {
     weekly: Number.isFinite(normalized.analyticsSelections?.weekly) ? normalized.analyticsSelections.weekly : -1,
@@ -1183,27 +1221,61 @@ function escapeHtml(value) {
     "'": '&#39;'
   }[char]));
 }
-function openDrawer() {
-  els.drawer.classList.remove('hidden');
-  els.drawerBackdrop.classList.remove('hidden');
+function updatePageNavigation() {
+  const activePage = state.page;
+  document.body.dataset.activePage = activePage;
+  const activePanel = document.getElementById(`${activePage}Page`);
+  if (els.tabPill && activePanel) {
+    const pageStyles = getComputedStyle(activePanel);
+    ['--pa', '--pa-dim', '--pa-border', '--pa-text'].forEach(token => {
+      els.tabPill.style.setProperty(`--tab-accent${token.slice(4)}`, pageStyles.getPropertyValue(token));
+    });
+  }
+  document.querySelectorAll('.tab-pill-item[data-page]').forEach(btn => {
+    const active = btn.dataset.page === activePage;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', String(active));
+  });
 }
-function closeDrawer() {
-  els.drawer.classList.add('hidden');
-  els.drawerBackdrop.classList.add('hidden');
+function renderOtherView() {
+  const view = ['profile', 'settings', 'achievements', 'data'].includes(state.otherView) ? state.otherView : 'settings';
+  const panelByView = {
+    profile: els.profilePanel,
+    settings: els.settingsPage,
+    achievements: els.achievementsPage,
+    data: $('dataPanel')
+  };
+  Object.entries(panelByView).forEach(([key, panel]) => {
+    if (!panel) return;
+    const active = key === view;
+    panel.classList.toggle('active', active);
+    panel.classList.toggle('hidden', !active);
+    panel.setAttribute('aria-hidden', String(!active));
+  });
+  document.querySelectorAll('.other-tab[data-other-view]').forEach(btn => {
+    const active = btn.dataset.otherView === view;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', String(active));
+  });
+}
+function setOtherView(view) {
+  state.otherView = ['profile', 'settings', 'achievements', 'data'].includes(view) ? view : 'settings';
+  renderOtherView();
+  if (state.otherView === 'achievements') revealAchievementsOnOpen();
+  saveState();
 }
 function setPage(page) {
-  state.page = ['timer', 'analytics', 'settings', 'leaderboard', 'achievements'].includes(page) ? page : 'timer';
+  state.page = ['timer', 'analytics', 'leaderboard', 'other'].includes(page) ? page : 'timer';
   els.timerPage.classList.toggle('active', state.page === 'timer');
   if (els.analyticsPage) els.analyticsPage.classList.toggle('active', state.page === 'analytics');
-  if (els.settingsPage) els.settingsPage.classList.toggle('active', state.page === 'settings');
   if (els.leaderboardPage) els.leaderboardPage.classList.toggle('active', state.page === 'leaderboard');
-  if (els.achievementsPage) els.achievementsPage.classList.toggle('active', state.page === 'achievements');
-  document.querySelectorAll('.drawer-item[data-page]').forEach(btn => btn.classList.toggle('active', btn.dataset.page === state.page));
-  if (state.page === 'achievements') {
+  if (els.otherPage) els.otherPage.classList.toggle('active', state.page === 'other');
+  updatePageNavigation();
+  if (state.page === 'other') {
+    renderOtherView();
     revealAchievementsOnOpen();
   }
   saveState();
-  closeDrawer();
   render();
 }
 function renderTimerOnly() {
@@ -1479,9 +1551,13 @@ function render(options = {}) {
   updateStats();
   renderTimerOnly();
   if (state.page === 'analytics') renderAnalytics();
-  else if (state.page === 'settings') renderSettings();
+  else if (state.page === 'other') {
+    renderOtherView();
+    renderSettings();
+    renderAchievements();
+  }
   else if (state.page === 'leaderboard') renderLeaderboard();
-  else if (state.page === 'achievements') renderAchievements();
+  updateProfileLabels();
   if (!options.skipSave) saveState();
 }
 function requestWakeLock() {
@@ -1781,6 +1857,7 @@ function pauseTimer() {
   render();
 }
 function openSessionModal() {
+  setScrollLock(true);
   els.sessionModal.classList.remove('hidden');
   els.sessionModal.setAttribute('aria-hidden', 'false');
   els.questionInput.value = '';
@@ -1805,6 +1882,7 @@ function openSessionModal() {
   els.questionInput.focus();
 }
 function closeSessionModal() {
+  setScrollLock(false);
   els.sessionModal.classList.add('hidden');
   els.sessionModal.setAttribute('aria-hidden', 'true');
 }
@@ -2066,6 +2144,7 @@ function openAnalyticsSessionModal(row) {
     });
   }
   if (els.analyticsSessionModal) {
+    setScrollLock(true);
     els.analyticsSessionModal.classList.remove('hidden');
     els.analyticsSessionModal.setAttribute('aria-hidden', 'false');
   }
@@ -2073,6 +2152,7 @@ function openAnalyticsSessionModal(row) {
 
 function closeAnalyticsSessionModal() {
   if (!els.analyticsSessionModal) return;
+  setScrollLock(false);
   els.analyticsSessionModal.classList.add('hidden');
   els.analyticsSessionModal.setAttribute('aria-hidden', 'true');
 }
@@ -2397,7 +2477,7 @@ function getAchievementMetrics() {
 }
 
 function maybeUnlockHiddenEggs() {
-  if (state.page === 'achievements') {
+  if (state.page === 'other') {
     revealAchievementsOnOpen();
   } else {
     updateAchievements({ announce: false });
@@ -2452,11 +2532,59 @@ function updateAchievements({ announce = false, persist = true } = {}) {
     clearTimeout(updateAchievements._t);
     updateAchievements._t = setTimeout(() => {
       achievementFlashIds = new Set();
-      if (state.page === 'achievements') renderAchievements();
+      if (state.page === 'other') renderAchievements();
     }, 1200);
   }
 
   return { changed, newlyUnlocked };
+}
+
+function setupAchievementsWorkspace() {
+  const page = els.achievementsPage;
+  const gridCard = page?.querySelector('.achievements-grid-card');
+  if (!page || !gridCard || page.dataset.workspaceReady) return;
+  const tabs = document.createElement('div');
+  tabs.className = 'achievement-tabs';
+  tabs.setAttribute('role', 'tablist');
+  tabs.setAttribute('aria-label', 'Achievement categories');
+  tabs.innerHTML = `
+    <button class="achievement-tab active" type="button" role="tab" aria-selected="true" data-achievement-view="daily">Daily</button>
+    <button class="achievement-tab" type="button" role="tab" aria-selected="false" data-achievement-view="permanent">Milestones</button>
+    <button class="achievement-tab" type="button" role="tab" aria-selected="false" data-achievement-view="guide">Guide</button>
+  `;
+  gridCard.before(tabs);
+  tabs.querySelectorAll('[data-achievement-view]').forEach(btn => {
+    btn.addEventListener('click', () => setAchievementView(btn.dataset.achievementView));
+  });
+  page.dataset.workspaceReady = 'true';
+}
+function renderAchievementView() {
+  const view = ['daily', 'permanent', 'guide'].includes(state.achievementView) ? state.achievementView : 'daily';
+  const gridCard = els.achievementsPage?.querySelector('.achievements-grid-card');
+  const guideCard = els.achievementsPage?.querySelector('.achievements-info-card');
+  if (gridCard) {
+    const active = view !== 'guide';
+    gridCard.classList.toggle('active', active);
+    gridCard.classList.toggle('hidden', !active);
+    gridCard.setAttribute('aria-hidden', String(!active));
+  }
+  if (guideCard) {
+    const active = view === 'guide';
+    guideCard.classList.toggle('active', active);
+    guideCard.classList.toggle('hidden', !active);
+    guideCard.setAttribute('aria-hidden', String(!active));
+  }
+  document.querySelectorAll('.achievement-tab[data-achievement-view]').forEach(btn => {
+    const active = btn.dataset.achievementView === view;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', String(active));
+  });
+}
+function setAchievementView(view) {
+  state.achievementView = ['daily', 'permanent', 'guide'].includes(view) ? view : 'daily';
+  renderAchievementView();
+  renderAchievements();
+  saveState();
 }
 
 function buildAchievementCard(def, metrics, kind) {
@@ -2503,34 +2631,32 @@ function renderAchievements() {
   }
   if (!list) return;
 
-  // Separate Daily (priority group) vs Permanent. Order follows ACHIEVEMENT_DEFS.
+  // Each category gets a dedicated view so the badge hub stays short on phones.
   const dailyDefs = ACHIEVEMENT_DEFS.filter(def => def.daily);
   const permanentDefs = ACHIEVEMENT_DEFS.filter(def => !def.daily);
 
   const dailyUnlocked = dailyDefs.reduce((n, def) => n + (state.achievements?.[def.id] ? 1 : 0), 0);
   const permUnlocked = permanentDefs.reduce((n, def) => n + (state.achievements?.[def.id] ? 1 : 0), 0);
 
+  const showingDaily = state.achievementView !== 'permanent';
+  const defs = showingDaily ? dailyDefs : permanentDefs;
+  const kind = showingDaily ? 'daily' : 'permanent';
+  const label = showingDaily ? 'Daily Challenges' : 'Permanent Milestones';
+  const summary = showingDaily
+    ? `Resets at midnight · ${dailyUnlocked}/${dailyDefs.length} unlocked`
+    : `Unlocked forever · ${permUnlocked}/${permanentDefs.length} unlocked`;
   list.innerHTML = `
-    <section class="ach-group ach-group--daily" aria-label="Daily Challenges">
-      <div class="section-heading ach-group-heading ach-group-heading--daily">
-        <h2>☀️ Daily Challenges</h2>
-        <span>Resets at midnight · ${dailyUnlocked}/${dailyDefs.length} unlocked</span>
+    <section class="ach-group ach-group--${kind}" aria-label="${label}">
+      <div class="section-heading ach-group-heading ach-group-heading--${kind}">
+        <h2>${label}</h2>
+        <span>${summary}</span>
       </div>
-      <div class="ach-list ach-list--daily">
-        ${dailyDefs.map(def => buildAchievementCard(def, metrics, 'daily')).join('')}
-      </div>
-    </section>
-
-    <section class="ach-group ach-group--permanent" aria-label="Permanent Milestones">
-      <div class="section-heading ach-group-heading ach-group-heading--permanent">
-        <h2>🏆 Permanent Milestones</h2>
-        <span>Unlocked forever · ${permUnlocked}/${permanentDefs.length} unlocked</span>
-      </div>
-      <div class="ach-list ach-list--permanent">
-        ${permanentDefs.map(def => buildAchievementCard(def, metrics, 'permanent')).join('')}
+      <div class="ach-list ach-list--${kind}">
+        ${defs.map(def => buildAchievementCard(def, metrics, kind)).join('')}
       </div>
     </section>
   `;
+  renderAchievementView();
 }
 
 // Full-screen celebration shown when an achievement unlocks from a logged
@@ -2565,6 +2691,7 @@ function showAchievementPopup(def, extra = []) {
   }
 
   els.achPopupOverlay.classList.remove('hidden');
+  setScrollLock(true);
   playSound('achievement');
 
   clearTimeout(showAchievementPopup._t);
@@ -2573,6 +2700,7 @@ function showAchievementPopup(def, extra = []) {
 
 function hideAchievementPopup() {
   if (!els.achPopupOverlay) return;
+  setScrollLock(false);
   els.achPopupOverlay.classList.add('hidden');
   clearTimeout(showAchievementPopup._t);
 }
@@ -2589,7 +2717,7 @@ function renderLeaderboard() {
   // Reflect the active toggle on the scope bar.
   document.querySelectorAll('[data-lb-scope]').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.lbScope === scope);
-    btn.setAttribute('aria-pressed', String(btn.dataset.lbScope === scope));
+    btn.setAttribute('aria-selected', String(btn.dataset.lbScope === scope));
   });
 
   // Project each raw row onto the active scope. Daily/weekly rows only count
@@ -2705,9 +2833,15 @@ function renderLeaderboard() {
     return `<div class="mini-line leaderboard-row${rowClass}${youClass}"><span>${rankLabel}. ${name}${youTag}</span><strong>${hours} · ${questions} q</strong></div>`;
   }).join('');
 }
+function updateProfileLabels() {
+  const name = state.profile?.name || 'Guest';
+  if (els.profileName) els.profileName.textContent = name;
+  if (els.profilePageName) els.profilePageName.textContent = name;
+}
 function openProfileModal() {
 
   if (!els.profileModal) return;
+  setScrollLock(true);
   els.profileModal.classList.remove('hidden');
   els.profileModal.setAttribute('aria-hidden', 'false');
   els.profileInput.value = (state.profile && state.profile.name) || '';
@@ -2715,23 +2849,37 @@ function openProfileModal() {
 }
 function closeProfileModal(force = false) {
   if (!els.profileModal) return;
-  const profile = normalizeProfile(state.profile || loadProfile());
-  if (!force && !profile.name) {
-    showToast('Enter your name to continue');
-    setTimeout(() => els.profileInput.focus(), 50);
-    return;
+  if (!force) {
+    const profile = normalizeProfile(state.profile || loadProfile());
+    if (!profile.name) {
+      showToast('Enter your name to continue');
+      setTimeout(() => els.profileInput.focus(), 50);
+      return;
+    }
   }
   els.profileModal.classList.add('hidden');
   els.profileModal.setAttribute('aria-hidden', 'true');
+  setScrollLock(false);
 }
 function ensureProfile() {
   const profile = normalizeProfile(state.profile || loadProfile());
   state.profile = profile;
-  if (els.profileName) els.profileName.textContent = profile.name || 'Guest';
+  updateProfileLabels();
   if (!profile.name) {
-    void hydrateProfileFromCloud().then((hydrated) => {
+    // Show the modal after a short delay even if cloud check hasn't completed,
+    // so the user is never stuck waiting indefinitely (e.g. offline).
+    const cloudCheck = hydrateProfileFromCloud().then((hydrated) => {
       if (normalizedProfileHasName(hydrated)) return;
-      openProfileModal();
+    });
+    // If cloud hasn't resolved in 3s, show the modal anyway.
+    const fallbackTimer = setTimeout(() => {
+      const p = normalizeProfile(state.profile || loadProfile());
+      if (!p.name) openProfileModal();
+    }, 3000);
+    cloudCheck.finally(() => {
+      clearTimeout(fallbackTimer);
+      const p = normalizeProfile(state.profile || loadProfile());
+      if (!p.name) openProfileModal();
     });
   }
   return profile;
@@ -2751,7 +2899,7 @@ async function saveProfileFromInput() {
     }
     const ok = saveProfile({ name, createdAt: state.profile?.createdAt || Date.now(), updatedAt: Date.now() });
     if (!ok) return;
-    if (els.profileName) els.profileName.textContent = name;
+    updateProfileLabels();
     closeProfileModal(true);
     render({ skipSave: true });
 
@@ -2917,6 +3065,65 @@ function renderSettingsRangeValues() {
   updateSettingsRangeValue(els.settingsLongBreakInput, els.settingsLongBreakValue, 'min');
   updateSettingsRangeValue(els.settingsRoundsInput, els.settingsRoundsValue, 'rounds');
 }
+function setupSettingsWorkspace() {
+  const card = els.settingsPage?.querySelector('.settings-card');
+  if (!card || card.dataset.workspaceReady) return;
+  const headings = Array.from(card.children).filter(el => el.classList.contains('section-heading'));
+  const grids = {
+    timer: card.querySelector('.settings-grid'),
+    flow: card.querySelector('.settings-toggles'),
+    appearance: card.querySelector('.theme-grid')
+  };
+  const actions = card.querySelector('.settings-actions');
+  if (headings.length < 3 || !grids.timer || !grids.flow || !grids.appearance) return;
+
+  card.querySelectorAll('.page-divider').forEach(divider => divider.remove());
+  const tabs = document.createElement('div');
+  tabs.className = 'settings-tabs';
+  tabs.setAttribute('role', 'tablist');
+  tabs.setAttribute('aria-label', 'Settings categories');
+  tabs.innerHTML = `
+    <button class="settings-tab active" type="button" role="tab" aria-selected="true" data-settings-view="timer">Timer</button>
+    <button class="settings-tab" type="button" role="tab" aria-selected="false" data-settings-view="flow">Flow</button>
+    <button class="settings-tab" type="button" role="tab" aria-selected="false" data-settings-view="appearance">Style</button>
+  `;
+  const panes = {};
+  ['timer', 'flow', 'appearance'].forEach(view => {
+    const pane = document.createElement('div');
+    pane.className = `settings-pane${view === 'timer' ? ' active' : ''}`;
+    pane.dataset.settingsPane = view;
+    panes[view] = pane;
+    card.appendChild(pane);
+  });
+  panes.timer.append(headings[0], grids.timer);
+  panes.flow.append(headings[1], grids.flow);
+  panes.appearance.append(headings[2], grids.appearance);
+  if (actions) panes.appearance.appendChild(actions);
+  card.prepend(tabs);
+  tabs.querySelectorAll('[data-settings-view]').forEach(btn => {
+    btn.addEventListener('click', () => setSettingsView(btn.dataset.settingsView));
+  });
+  card.dataset.workspaceReady = 'true';
+}
+function renderSettingsView() {
+  const view = ['timer', 'flow', 'appearance'].includes(state.settingsView) ? state.settingsView : 'timer';
+  document.querySelectorAll('[data-settings-pane]').forEach(pane => {
+    const active = pane.dataset.settingsPane === view;
+    pane.classList.toggle('active', active);
+    pane.classList.toggle('hidden', !active);
+    pane.setAttribute('aria-hidden', String(!active));
+  });
+  document.querySelectorAll('.settings-tab[data-settings-view]').forEach(btn => {
+    const active = btn.dataset.settingsView === view;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', String(active));
+  });
+}
+function setSettingsView(view) {
+  state.settingsView = ['timer', 'flow', 'appearance'].includes(view) ? view : 'timer';
+  renderSettingsView();
+  saveState();
+}
 function renderSettings() {
   if (!els.settingsPage) return;
   if (els.settingsFocusInput) els.settingsFocusInput.value = String(state.focus);
@@ -2932,6 +3139,7 @@ function renderSettings() {
     card.classList.toggle('active', card.dataset.theme === (state.theme || 'nebula'));
     card.setAttribute('aria-pressed', String(card.dataset.theme === (state.theme || 'nebula')));
   });
+  renderSettingsView();
 }
 function applySettingsFromUI() {
   if (!els.settingsPage) return;
@@ -2998,24 +3206,24 @@ function init() {
   sanitizeNumbers();
   if (!state.total) state.total = secondsForMode(state.currentMode);
   if (!state.remaining) state.remaining = state.total;
-  if (!['timer', 'analytics', 'settings', 'leaderboard', 'achievements'].includes(state.page)) state.page = 'timer';
+  if (!['timer', 'analytics', 'leaderboard', 'other'].includes(state.page)) state.page = 'timer';
   if (state.pendingSession) state.running = false;
   state.remaining = clamp(Number(state.remaining) || state.total, 0, state.total || secondsForMode(state.currentMode));
   state.total = Math.max(1, Number(state.total) || secondsForMode(state.currentMode));
 
   els.timerPage.classList.toggle('active', state.page === 'timer');
   if (els.analyticsPage) els.analyticsPage.classList.toggle('active', state.page === 'analytics');
-  if (els.settingsPage) els.settingsPage.classList.toggle('active', state.page === 'settings');
   if (els.leaderboardPage) els.leaderboardPage.classList.toggle('active', state.page === 'leaderboard');
-  if (els.achievementsPage) els.achievementsPage.classList.toggle('active', state.page === 'achievements');
-  document.querySelectorAll('.drawer-item[data-page]').forEach(btn => btn.classList.toggle('active', btn.dataset.page === state.page));
+  if (els.otherPage) els.otherPage.classList.toggle('active', state.page === 'other');
+  updatePageNavigation();
+  renderOtherView();
   document.querySelectorAll('.tab[data-analytics-view]').forEach(btn => btn.classList.toggle('active', btn.dataset.analyticsView === (state.analyticsView || 'weekly')));
 
   currentSubject = safeSubject(state.lastSubject);
   currentAnalyticsDetail = null;
   closeSessionModal();
   applyTheme(state.theme);
-  if (els.profileName) els.profileName.textContent = state.profile.name || 'Guest';
+  updateProfileLabels();
   ensureProfile();
 
   // Restore timer checkpoint BEFORE the first render() call.
@@ -3104,8 +3312,18 @@ function init() {
   });
 }
 
-els.menuBtn.addEventListener('click', openDrawer);
-els.aboutBtn.addEventListener('click', openDrawer);
+document.querySelectorAll('.tab-pill-item[data-page]').forEach(btn => {
+  btn.addEventListener('click', () => setPage(btn.dataset.page));
+});
+document.querySelectorAll('.other-tab[data-other-view]').forEach(btn => {
+  btn.addEventListener('click', () => setOtherView(btn.dataset.otherView));
+});
+if (els.changeProfileBtn) els.changeProfileBtn.addEventListener('click', openProfileModal);
+if (els.profileName) {
+  els.profileName.style.cursor = 'pointer';
+  els.profileName.title = 'Tap to change your name';
+  els.profileName.addEventListener('click', openProfileModal);
+}
 if (els.profileSaveBtn) els.profileSaveBtn.addEventListener('click', saveProfileFromInput);
 if (els.profileInput) {
   els.profileInput.addEventListener('keydown', (e) => {
@@ -3118,9 +3336,6 @@ if (els.profileModal) {
     if (e.target === els.profileModal) closeProfileModal();
   });
 }
-els.closeDrawerBtn.addEventListener('click', closeDrawer);
-els.drawerBackdrop.addEventListener('click', closeDrawer);
-els.drawer.querySelectorAll('.drawer-item[data-page]').forEach(btn => btn.addEventListener('click', () => setPage(btn.dataset.page)));
 els.backupBtn.addEventListener('click', exportBackup);
 if (els.importBtn) els.importBtn.addEventListener('click', importBackup);
 if (els.importFileInput) els.importFileInput.addEventListener('change', handleImportFileChange);
@@ -3316,7 +3531,6 @@ document.querySelectorAll('.theme-card[data-theme]').forEach(card => {
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
-    closeDrawer();
     if (!els.sessionModal.classList.contains('hidden')) dismissSessionModal();
     if (els.analyticsSessionModal && !els.analyticsSessionModal.classList.contains('hidden')) closeAnalyticsSessionModal();
   }
@@ -3328,10 +3542,15 @@ function cleanupAndRefresh(options = {}) {
   updateStats();
   updateAchievements();
   if (state.page === 'analytics') renderAnalytics();
-  else if (state.page === 'settings') renderSettings();
+  else if (state.page === 'other') {
+    renderSettings();
+    renderAchievements();
+  }
   else renderTimerOnly();
   if (!options.skipSave) saveState();
 }
+setupSettingsWorkspace();
+setupAchievementsWorkspace();
 init();
 cleanupAndRefresh({ skipSave: true });
 void reconcileCloudState({ reason: 'startup', force: navigator.onLine !== false }).then((changed) => {
@@ -3363,4 +3582,45 @@ function tick() {
   saveTimerCheckpoint();
   renderTimerOnly();
   saveState();
+}
+
+/* ── Scroll-aware topbar ────────────────────────────────────
+   The topbar is position:fixed, so it stays pinned. To stop it reading as a
+   heavy bar floating over content, once the user scrolls past a few pixels we
+   fade it down to near-transparent (brand title nearly vanishes; the profile
+   pill / signed-in name stays more visible). Scrolling back to top restores it.
+
+   Covers laptop (wheel/keyboard scroll) AND mobile (touch scroll) by listening
+   to scroll + touchmove + resize. Uses rAF throttling and passive listeners. */
+function initScrollTopbar() {
+  const topbar = document.querySelector('.topbar');
+  if (!topbar || topbar.dataset.scrollBound === '1') return;
+  topbar.dataset.scrollBound = '1';
+
+  let ticking = false;
+  const THRESHOLD = 8;
+
+  const update = () => {
+    ticking = false;
+    const y = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0;
+    topbar.classList.toggle('scrolled', y > THRESHOLD);
+  };
+  const schedule = () => {
+    if (ticking) return;
+    ticking = true;
+    window.requestAnimationFrame(update);
+  };
+
+  window.addEventListener('scroll', schedule, { passive: true });
+  window.addEventListener('touchmove', schedule, { passive: true });
+  window.addEventListener('resize', schedule, { passive: true });
+  // Re-check shortly after load in case late content shifts the scroll position.
+  setTimeout(update, 300);
+  update();
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initScrollTopbar);
+} else {
+  initScrollTopbar();
 }

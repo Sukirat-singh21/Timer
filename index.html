@@ -17,13 +17,11 @@
 
     <!-- ── Top bar ──────────────────────────────────────── -->
     <header class="topbar">
-      <button class="icon-btn" id="menuBtn" aria-label="Open menu">☰</button>
       <div class="brand">
         <div class="brand-title" id="appTitle">JEE Pomodoro Flow</div>
         <div class="brand-subtitle">Focus timer · Subject tracking · Leaderboard</div>
       </div>
       <div class="profile-pill" id="profileName">Guest</div>
-      <button class="ghost-btn" id="aboutBtn">Menu</button>
     </header>
 
     <!-- ── Pages ────────────────────────────────────────── -->
@@ -162,12 +160,38 @@
       <!-- ╔══════════════════════════════════════════════╗ -->
       <!-- ║  SETTINGS PAGE — Amber identity              ║ -->
       <!-- ╚══════════════════════════════════════════════╝ -->
-      <section class="page" id="settingsPage">
+      <section class="page" id="otherPage">
+
+        <div class="other-tabs" role="tablist" aria-label="Other sections">
+          <button class="other-tab" type="button" role="tab" aria-selected="false" aria-controls="profilePanel" data-other-view="profile">Profile</button>
+          <button class="other-tab active" type="button" role="tab" aria-selected="true" aria-controls="settingsPage" data-other-view="settings">Settings</button>
+          <button class="other-tab" type="button" role="tab" aria-selected="false" aria-controls="achievementsPage" data-other-view="achievements">Badges</button>
+          <button class="other-tab" type="button" role="tab" aria-selected="false" aria-controls="dataPanel" data-other-view="data">Data</button>
+        </div>
+
+        <section class="card other-panel other-profile-card hidden" id="profilePanel" aria-labelledby="profileSectionTitle">
+          <div class="section-heading">
+            <div>
+              <span class="other-kicker">YOUR PROFILE</span>
+              <h2 id="profileSectionTitle">Study identity</h2>
+            </div>
+            <button class="soft other-profile-action" id="changeProfileBtn" type="button">Change name</button>
+          </div>
+          <div class="other-profile-summary">
+            <span class="other-profile-avatar" aria-hidden="true">👤</span>
+            <div>
+              <strong id="profilePageName">Guest</strong>
+              <span>Shown on the shared leaderboard and synced across your devices.</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="other-panel active" id="settingsPage" aria-labelledby="settingsSectionTitle">
 
         <div class="card settings-header page-header-card">
           <div>
             <div class="eyebrow">⚙️ Settings</div>
-            <h2>Timer controls</h2>
+            <h2 id="settingsSectionTitle">Timer controls</h2>
             <p>Set your focus length, tune breaks, and switch on continuous no-break mode for long grind sessions. Changes save automatically.</p>
           </div>
           <div class="settings-summary">
@@ -284,12 +308,12 @@
       <!-- ╔══════════════════════════════════════════════╗ -->
       <!-- ║  ACHIEVEMENTS PAGE — Gold identity           ║ -->
       <!-- ╚══════════════════════════════════════════════╝ -->
-      <section class="page" id="achievementsPage">
+        <section class="other-panel hidden" id="achievementsPage" aria-labelledby="achievementsSectionTitle">
 
         <div class="card achievements-header page-header-card">
           <div>
             <div class="eyebrow">🏆 Achievements</div>
-            <h2>Your badges</h2>
+            <h2 id="achievementsSectionTitle">Your badges</h2>
             <p>Track permanent milestones and today’s challenges. New unlocks pop up as soon as you log the session that earns them.</p>
           </div>
           <div class="analytics-stats achievements-summary" style="grid-template-columns:repeat(2,minmax(0,1fr))">
@@ -325,6 +349,35 @@
           <div id="achJee"></div>
         </div>
 
+        </section>
+
+        <section class="card other-panel other-data-card hidden" id="dataPanel" aria-labelledby="dataSectionTitle">
+          <div class="section-heading">
+            <div>
+              <span class="other-kicker">DATA MANAGEMENT</span>
+              <h2 id="dataSectionTitle">Your study data</h2>
+            </div>
+            <span>Stored privately on this device</span>
+          </div>
+          <p>Export a safety copy, restore a previous backup, or start fresh whenever you need to.</p>
+          <div class="other-data-actions">
+            <button class="soft" id="backupBtn" type="button">Export backup</button>
+            <button class="soft" id="importBtn" type="button">Import backup</button>
+            <button class="danger" id="clearDataBtn" type="button">Clear local data</button>
+          </div>
+          <input type="file" id="importFileInput" accept="application/json,.json" hidden />
+
+          <div class="about-box" aria-labelledby="aboutSectionTitle" style="margin-top:4px">
+            <div class="section-heading">
+              <div>
+                <span class="other-kicker">ABOUT</span>
+                <h2 id="aboutSectionTitle">JEE Pomodoro Flow</h2>
+              </div>
+            </div>
+            <p>Made with love by <strong>Sukirat</strong>. Tap the app title 7 times for a small surprise.</p>
+          </div>
+        </section>
+
       </section>
 
       <!-- ╔══════════════════════════════════════════════╗ -->
@@ -332,40 +385,25 @@
       <!-- ╚══════════════════════════════════════════════╝ -->
       <section class="page" id="leaderboardPage">
 
-        <div class="card leaderboard-header page-header-card">
-          <div>
-            <div class="eyebrow">🏅 Leaderboard</div>
-            <h2>Shared progress board</h2>
-            <p>Switch between Today, This Week, and All-time. Ranked by study minutes, then questions solved.</p>
-          </div>
-          <div class="analytics-stats leaderboard-summary" style="grid-template-columns:repeat(2,minmax(0,1fr))">
-            <div class="mini-stat"><span>👥 Players</span><strong id="leaderboardCount">0</strong></div>
-            <div class="mini-stat">
-              <span>Status</span>
-              <strong>
-                <span class="live-indicator">
-                  <span class="live-dot"></span>LIVE
-                </span>
-              </strong>
-            </div>
-            <div class="mini-stat"><span>🥇 Top rank</span><strong>Gold</strong></div>
-            <div class="mini-stat"><span>🕐 Synced</span><strong id="leaderboardUpdatedAt">—</strong></div>
-          </div>
-        </div>
-
         <div class="card leaderboard-scope-card">
+          <div class="leaderboard-meta-row" aria-label="Leaderboard status">
+            <span><strong id="leaderboardCount">0</strong> players</span>
+            <span class="live-indicator"><span class="live-dot"></span>Live</span>
+            <span>Top rank: Gold</span>
+            <span class="leaderboard-sync">Synced <strong id="leaderboardUpdatedAt">—</strong></span>
+          </div>
           <div class="lb-scope-bar" id="leaderboardScopeBar" role="tablist" aria-label="Leaderboard time scope">
-            <button class="lb-scope active" type="button" role="tab" aria-pressed="true"
+            <button class="lb-scope active" type="button" role="tab" aria-selected="true"
                     data-lb-scope="daily">
               <span class="lb-scope-icon">📅</span>
               <span class="lb-scope-label">Today</span>
             </button>
-            <button class="lb-scope" type="button" role="tab" aria-pressed="false"
+            <button class="lb-scope" type="button" role="tab" aria-selected="false"
                     data-lb-scope="weekly">
               <span class="lb-scope-icon">🗓️</span>
               <span class="lb-scope-label">This Week</span>
             </button>
-            <button class="lb-scope" type="button" role="tab" aria-pressed="false"
+            <button class="lb-scope" type="button" role="tab" aria-selected="false"
                     data-lb-scope="alltime">
               <span class="lb-scope-icon">🏆</span>
               <span class="lb-scope-label">All-time</span>
@@ -401,55 +439,20 @@
     </main>
   </div>
 
-  <!-- ── Drawer backdrop ────────────────────────────────── -->
-  <div class="drawer-backdrop hidden" id="drawerBackdrop"></div>
-
-  <!-- ── Side drawer ────────────────────────────────────── -->
-  <aside class="drawer hidden" id="drawer" aria-label="Navigation menu">
-    <div class="drawer-head">
-      <div>
-        <div class="drawer-title">Navigation</div>
-        <div class="drawer-sub">Choose a page</div>
-      </div>
-      <button class="icon-btn small" id="closeDrawerBtn" aria-label="Close menu">✕</button>
-    </div>
-
-    <button class="drawer-item active" data-page="timer">
-      <span class="drawer-item-icon">🎯</span>Timer
+  <nav class="tab-pill" id="tabPill" role="tablist" aria-label="Primary navigation">
+    <button class="tab-pill-item active" type="button" role="tab" aria-selected="true" aria-controls="timerPage" data-page="timer">
+      <span aria-hidden="true">🎯</span><span>Timer</span>
     </button>
-    <button class="drawer-item" data-page="analytics">
-      <span class="drawer-item-icon">📊</span>Analytics
+    <button class="tab-pill-item" type="button" role="tab" aria-selected="false" aria-controls="analyticsPage" data-page="analytics">
+      <span aria-hidden="true">📊</span><span>Analytics</span>
     </button>
-    <button class="drawer-item" data-page="settings">
-      <span class="drawer-item-icon">⚙️</span>Settings
+    <button class="tab-pill-item" type="button" role="tab" aria-selected="false" aria-controls="leaderboardPage" data-page="leaderboard">
+      <span aria-hidden="true">🏆</span><span>Leaderboard</span>
     </button>
-    <button class="drawer-item" data-page="leaderboard">
-      <span class="drawer-item-icon">🏅</span>Leaderboard
+    <button class="tab-pill-item" type="button" role="tab" aria-selected="false" aria-controls="otherPage" data-page="other">
+      <span aria-hidden="true">⋯</span><span>More</span>
     </button>
-    <button class="drawer-item" data-page="achievements">
-      <span class="drawer-item-icon">🏆</span>Achievements
-    </button>
-
-    <div class="drawer-separator"></div>
-
-    <button class="drawer-item" id="backupBtn">
-      <span class="drawer-item-icon">💾</span>Export backup
-    </button>
-    <button class="drawer-item" id="importBtn">
-      <span class="drawer-item-icon">📥</span>Import backup
-    </button>
-    <button class="drawer-item" id="clearDataBtn">
-      <span class="drawer-item-icon">🗑</span>Clear local data
-    </button>
-    <input type="file" id="importFileInput" accept="application/json,.json" hidden />
-
-    <div class="about-box">
-      <div class="section-heading">
-        <h2>About</h2>
-      </div>
-      <p>Made with ❤️ by <strong>Sukirat</strong>.<br>Tap the title 7× for a small surprise.</p>
-    </div>
-  </aside>
+  </nav>
 
   <!-- ── Session log modal ──────────────────────────────── -->
   <div class="modal hidden" id="sessionModal"
@@ -635,7 +638,8 @@
 
           // Catch deploys that happen while the tab is left open for a
           // long time, since browsers only check for updates on navigation.
-          setInterval(() => { registration.update().catch(() => {}); }, 60 * 60 * 1000);
+          // Poll every 5 minutes so new code is picked up promptly.
+          setInterval(() => { registration.update().catch(() => {}); }, 5 * 60 * 1000);
         }).catch(() => {});
       });
     }
