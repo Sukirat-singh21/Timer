@@ -3,13 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#070c1b" />
+  <meta name="theme-color" content="#0d1b14" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>JEE Pomodoro Flow</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icon-192.png" />
   <link rel="apple-touch-icon" href="icon-192.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700;800;900&family=Sora:wght@600;700&display=swap" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -18,8 +21,9 @@
     <!-- ── Top bar ──────────────────────────────────────── -->
     <header class="topbar">
       <div class="brand">
+        <div class="brand-overline" id="brandGreeting">Good to see you</div>
         <div class="brand-title" id="appTitle">JEE Pomodoro Flow</div>
-        <div class="brand-subtitle">Focus timer · Subject tracking · Leaderboard</div>
+        <div class="brand-subtitle">Focus grove · Subject tracking · Leaderboard</div>
       </div>
       <div class="profile-pill" id="profileName">Guest</div>
     </header>
@@ -38,13 +42,21 @@
             <span class="status-mini" id="sessionMini">Round 1 of 4</span>
           </div>
 
+          <div class="round-tracker" id="roundTracker" aria-label="Pomodoro round progress"></div>
+
+          <div class="focus-context" aria-live="polite">
+            <span class="focus-context-dot" aria-hidden="true"></span>
+            <span id="focusContext">A clean block of time, just for you.</span>
+          </div>
+
           <div class="title-block">
-            <h1 id="heroTitle">Pomodoro Study Flow</h1>
-            <p>Focus timer · Manual subject log · Weekly &amp; monthly analytics. Built for JEE prep.</p>
+            <h1 id="heroTitle">Study Grove</h1>
+            <p>A calmer focus room for JEE prep, questions, patterns, and friendly competition.</p>
           </div>
 
           <div class="ring-wrap">
             <div class="ring">
+              <div class="ring-shimmer" aria-hidden="true"></div>
               <svg viewBox="0 0 200 200" aria-label="Timer progress ring">
                 <circle cx="100" cy="100" r="82" class="ring-base"></circle>
                 <circle id="progressRing" cx="100" cy="100" r="82" class="ring-progress"></circle>
@@ -64,7 +76,19 @@
                     <stop offset="50%"  stop-color="#f97316"></stop>
                     <stop offset="100%" stop-color="#c2410c"></stop>
                   </linearGradient>
+                  <linearGradient id="grad-gold" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%"   stop-color="#fff5d6"></stop>
+                    <stop offset="25%"  stop-color="#f5d98b"></stop>
+                    <stop offset="55%"  stop-color="#d4a437"></stop>
+                    <stop offset="100%" stop-color="#9c6b1e"></stop>
+                  </linearGradient>
+                  <radialGradient id="comet-glow" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%"   stop-color="#fffbe6" stop-opacity="1"></stop>
+                    <stop offset="40%"  stop-color="#f5d98b" stop-opacity=".6"></stop>
+                    <stop offset="100%" stop-color="#d4a437" stop-opacity="0"></stop>
+                  </radialGradient>
                 </defs>
+                <circle id="cometHead" cx="100" cy="18" r="7" fill="url(#comet-glow)" class="comet-head" opacity="0"></circle>
               </svg>
               <div class="inner">
                 <div class="time" id="timer" aria-live="polite">25:00</div>
@@ -73,11 +97,18 @@
             </div>
           </div>
 
-          <div class="controls">
-            <button class="primary" id="startPauseBtn">Start</button>
-            <button class="soft"    id="skipBtn">⏭ Skip</button>
-            <button class="success" id="resetBtn">↺ Reset</button>
-            <button class="danger"  id="logBtn">✏️ Log Session</button>
+          <div class="controls" aria-label="Timer controls">
+            <button class="primary" id="startPauseBtn" type="button" aria-label="Start timer" title="Start or pause timer (Space)">Start</button>
+            <div class="secondary-controls">
+              <button class="soft"    id="skipBtn" type="button" title="Skip to the next phase (S)">Skip</button>
+              <button class="success" id="resetBtn" type="button" title="Reset the current flow (R)">Reset</button>
+              <button class="danger"  id="logBtn" type="button" title="Log the current focus session (L)">Log session</button>
+            </div>
+          </div>
+          <div class="shortcut-hint" aria-label="Keyboard shortcuts">
+            <span><kbd>Space</kbd> start / pause</span>
+            <span><kbd>L</kbd> log session</span>
+            <span><kbd>R</kbd> reset</span>
           </div>
 
           <div class="summary-grid">
@@ -96,10 +127,23 @@
           </div>
         </div>
 
-        <div class="card quick-note">
-          <div class="section-heading">
-            <h2>Today's breakdown</h2>
-            <span>Auto-updates</span>
+        <div class="card quick-note daily-mood-card">
+          <div class="daily-mood-main">
+            <div class="daily-mood-icon" aria-hidden="true">✦</div>
+            <div>
+              <span class="daily-eyebrow">TODAY'S MOMENTUM</span>
+              <h2 id="dailyHeadline">One focused round can change the day.</h2>
+              <p id="dailySubline">Start small. Let the next 25 minutes belong to you.</p>
+            </div>
+          </div>
+          <div class="daily-progress" aria-hidden="true"><span id="dailyProgressBar"></span></div>
+          <div class="daily-mood-footer">
+            <span id="dailyProgressLabel">0m focused today</span>
+            <button class="daily-link" type="button" data-open-page="analytics">See patterns <span aria-hidden="true">→</span></button>
+          </div>
+          <div class="section-heading daily-breakdown-heading">
+            <h2>By subject</h2>
+            <span>Updates as you log</span>
           </div>
           <div class="mini-lines" id="todayBreakdown">
             <div class="mini-line"><span>⚡ Physics</span><strong>0m · 0 q</strong></div>
@@ -267,7 +311,7 @@
             <label class="toggle-row">
               <div>
                 <strong>✨ Pulse glow</strong>
-                <span>Ambient purple glow on the background while the timer runs.</span>
+                <span>Gentle ambient breathing on the background while the timer runs.</span>
               </div>
               <input id="settingsPulseInput" type="checkbox" />
             </label>
@@ -283,18 +327,18 @@
           <div class="theme-grid" id="themeGrid">
             <button class="theme-card active" data-theme="nebula" type="button">
               <div class="theme-preview nebula-preview"></div>
-              <div class="theme-name">Nebula</div>
-              <div class="theme-sub">Purple · Default</div>
+              <div class="theme-name">Grove</div>
+              <div class="theme-sub">Sage · Default</div>
             </button>
             <button class="theme-card" data-theme="ocean" type="button">
               <div class="theme-preview ocean-preview"></div>
-              <div class="theme-name">Ocean</div>
-              <div class="theme-sub">Cyan · Deep blue</div>
+              <div class="theme-name">Lagoon</div>
+              <div class="theme-sub">Teal · Cool dusk</div>
             </button>
             <button class="theme-card" data-theme="ember" type="button">
               <div class="theme-preview ember-preview"></div>
-              <div class="theme-name">Ember</div>
-              <div class="theme-sub">Orange · Warm</div>
+              <div class="theme-name">Hearth</div>
+              <div class="theme-sub">Amber · Warm desk</div>
             </button>
           </div>
 
@@ -435,6 +479,37 @@
         </div>
 
       </section>
+
+      <aside class="todo-panel card" id="todoPanel" aria-labelledby="todoTitle">
+        <div class="todo-panel-heading">
+          <div>
+            <span class="todo-kicker">FOCUS QUEUE</span>
+            <h2 id="todoTitle">Study tasks</h2>
+            <p>Keep the next useful action close while you work.</p>
+          </div>
+          <span class="todo-count" id="todoCount">0 open</span>
+        </div>
+
+        <form class="todo-form" id="todoForm">
+          <label class="sr-only" for="todoInput">Add a study task</label>
+          <input id="todoInput" type="text" maxlength="120" autocomplete="off" placeholder="Add a task…" />
+          <button class="primary todo-add-btn" type="submit">Add</button>
+        </form>
+
+        <div class="todo-filters" role="tablist" aria-label="Task filter">
+          <button class="todo-filter active" type="button" role="tab" aria-selected="true" data-todo-filter="open">Open</button>
+          <button class="todo-filter" type="button" role="tab" aria-selected="false" data-todo-filter="all">All</button>
+          <button class="todo-filter" type="button" role="tab" aria-selected="false" data-todo-filter="done">Done</button>
+        </div>
+
+        <ul class="todo-list" id="todoList" aria-live="polite"></ul>
+        <div class="todo-empty" id="todoEmpty">Your next clear action goes here.</div>
+
+        <div class="todo-panel-footer">
+          <span id="todoHint">Short, specific tasks are easier to start.</span>
+          <button class="todo-clear-btn" id="todoClearCompleted" type="button">Clear done</button>
+        </div>
+      </aside>
 
     </main>
   </div>

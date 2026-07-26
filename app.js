@@ -1,5 +1,18 @@
 const $ = (id) => document.getElementById(id);
 const CIRC = 515.22;
+const RING_R = 82; // radius of the progress ring circle
+const RING_CX = 100, RING_CY = 100; // center of the SVG viewBox
+/* Position the comet-head glow at the leading edge of the progress arc */
+function positionComet(pct) {
+  if (!els.cometHead) return;
+  // SVG circle starts at 3 o'clock; rotate(-90deg) on svg shifts start to 12 o'clock
+  // pct=0 → top (270° in math), pct=1 → full circle back to top
+  const angle = (pct * 360 - 90) * (Math.PI / 180);
+  const cx = RING_CX + RING_R * Math.cos(angle);
+  const cy = RING_CY + RING_R * Math.sin(angle);
+  els.cometHead.setAttribute('cx', cx.toFixed(2));
+  els.cometHead.setAttribute('cy', cy.toFixed(2));
+}
 const SUBJECTS = ['Physics', 'Chemistry', 'Maths'];
 const STORAGE_KEY = 'jee_pomodoro_flow_v5';
 const LEGACY_STORAGE_KEYS = ['jee_pomodoro_flow_v4'];
@@ -53,12 +66,16 @@ const els = {
   timerPage: $('timerPage'),
   analyticsPage: $('analyticsPage'),
   appTitle: $('appTitle'),
+  brandGreeting: $('brandGreeting'),
   heroTitle: $('heroTitle'),
+  focusContext: $('focusContext'),
+  roundTracker: $('roundTracker'),
   statusPill: $('statusPill'),
   sessionMini: $('sessionMini'),
   timer: $('timer'),
   modeLabel: $('modeLabel'),
   progressRing: $('progressRing'),
+  cometHead: $('cometHead'),
   startPauseBtn: $('startPauseBtn'),
   skipBtn: $('skipBtn'),
   resetBtn: $('resetBtn'),
@@ -67,6 +84,10 @@ const els = {
   todayQuestions: $('todayQuestions'),
   todaySessions: $('todaySessions'),
   todayBreakdown: $('todayBreakdown'),
+  dailyHeadline: $('dailyHeadline'),
+  dailySubline: $('dailySubline'),
+  dailyProgressBar: $('dailyProgressBar'),
+  dailyProgressLabel: $('dailyProgressLabel'),
   sessionModal: $('sessionModal'),
   closeModalBtn: $('closeModalBtn'),
   cancelLogBtn: $('cancelLogBtn'),
@@ -110,6 +131,14 @@ const els = {
   achPopupRarity: $('achPopupRarity'),
   achPopupDesc: $('achPopupDesc'),
   achPopupMore: $('achPopupMore'),
+  todoPanel: $('todoPanel'),
+  todoForm: $('todoForm'),
+  todoInput: $('todoInput'),
+  todoList: $('todoList'),
+  todoEmpty: $('todoEmpty'),
+  todoCount: $('todoCount'),
+  todoHint: $('todoHint'),
+  todoClearCompleted: $('todoClearCompleted'),
 };
 
 const defaultState = {
@@ -153,6 +182,7 @@ const defaultState = {
   cloudStateGeneration: 0,
   aboutPulseShown: false,
   profile: { name: '', createdAt: 0, updatedAt: 0 },
+  todos: [],
   achievements: {
     madeBy: true,
     jee: true,
@@ -200,6 +230,7 @@ let leaderboardRows = [];
 let profileModalBusy = false;
 let profileHydrationStarted = false;
 let achievementFlashIds = new Set();
+let todoFilter = 'open';
 
 function loadState() {
   try {
@@ -1057,6 +1088,7 @@ function normalizeState(nextState) {
   normalized.achievementDay = isDateKey(normalized.achievementDay) ? normalized.achievementDay : '';
   normalized.noBreakMode = Boolean(normalized.noBreakMode);
   normalized.profile = normalizeProfile(normalized.profile || loadProfile());
+  normalized.todos = normalizeTodos(normalized.todos);
   normalized.deletedRecordIds = normalizeDeletedRecordIds(normalized.deletedRecordIds);
   const seenRecordIds = new Set();
   normalized.records = Array.isArray(normalized.records)
@@ -1116,6 +1148,39 @@ function normalizeTimerSnapshot(snapshot) {
   };
 }
 
+function createTodoId() {
+  if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+    return window.crypto.randomUUID();
+  }
+  return `todo-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function normalizeTodo(todo) {
+  if (!todo || typeof todo !== 'object') return null;
+  const text = String(todo.text || '').trim().slice(0, 120);
+  if (!text) return null;
+  return {
+    id: String(todo.id || createTodoId()),
+    text,
+    completed: Boolean(todo.completed),
+    createdAt: Math.max(0, Number(todo.createdAt || Date.now()) || Date.now()),
+    completedAt: todo.completed ? Math.max(0, Number(todo.completedAt || 0) || 0) : 0
+  };
+}
+
+function normalizeTodos(todos) {
+  if (!Array.isArray(todos)) return [];
+  const seen = new Set();
+  return todos
+    .map(normalizeTodo)
+    .filter(todo => {
+      if (!todo || seen.has(todo.id)) return false;
+      seen.add(todo.id);
+      return true;
+    })
+    .slice(0, 200);
+}
+
 function createTimerSnapshot() {
   return normalizeTimerSnapshot({
     currentMode: state.currentMode,
@@ -1164,6 +1229,105 @@ function restorePendingSessionState(options = {}) {
 }
 
 function getRecords() { return Array.isArray(state.records) ? state.records : []; }
+
+function getTodos() {
+  return Array.isArray(state.todos) ? state.todos : [];
+}
+
+function renderTodoList() {
+  if (!els.todoList || !els.todoEmpty) return;
+  const todos = getTodos();
+  const openCount = todos.filter(todo => !todo.completed).length;
+  const doneCount = todos.length - openCount;
+  const visible = todos.filter(todo => (
+    todoFilter === 'all' ||
+    (todoFilter === 'done' ? todo.completed : !todo.completed)
+  ));
+
+  els.todoList.replaceChildren();
+  visible.forEach(todo => {
+    const item = document.createElement('li');
+    item.className = `todo-item${todo.completed ? ' is-complete' : ''}`;
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = todo.completed;
+    checkbox.className = 'todo-checkbox';
+    checkbox.setAttribute('aria-label', `${todo.completed ? 'Mark incomplete' : 'Complete'}: ${todo.text}`);
+    checkbox.addEventListener('change', () => updateTodo(todo.id, checkbox.checked));
+
+    const text = document.createElement('span');
+    text.className = 'todo-text';
+    text.textContent = todo.text;
+
+    const deleteButton = document.createElement('button');
+    deleteButton.type = 'button';
+    deleteButton.className = 'todo-delete-btn';
+    deleteButton.setAttribute('aria-label', `Delete task: ${todo.text}`);
+    deleteButton.textContent = '×';
+    deleteButton.addEventListener('click', () => deleteTodo(todo.id));
+
+    item.append(checkbox, text, deleteButton);
+    els.todoList.append(item);
+  });
+
+  els.todoEmpty.hidden = visible.length > 0;
+  if (!visible.length) {
+    els.todoEmpty.textContent = todoFilter === 'done'
+      ? 'Completed tasks will appear here.'
+      : todoFilter === 'all'
+        ? 'Your next clear action goes here.'
+        : 'Your queue is clear. Add the next useful step.';
+  }
+  if (els.todoCount) els.todoCount.textContent = `${openCount} open`;
+  if (els.todoHint) {
+    els.todoHint.textContent = openCount
+      ? `${openCount} task${openCount === 1 ? '' : 's'} ready for your next focus block.`
+      : doneCount
+        ? 'Nice work. Your open queue is clear.'
+        : 'Short, specific tasks are easier to start.';
+  }
+  if (els.todoClearCompleted) els.todoClearCompleted.disabled = doneCount === 0;
+  document.querySelectorAll('[data-todo-filter]').forEach(button => {
+    const active = button.dataset.todoFilter === todoFilter;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-selected', String(active));
+  });
+}
+
+function addTodo(text) {
+  const value = String(text || '').trim().slice(0, 120);
+  if (!value) return false;
+  state.todos = [{ id: createTodoId(), text: value, completed: false, createdAt: Date.now(), completedAt: 0 }, ...getTodos()];
+  saveState({ immediate: true, reason: 'todo-added' });
+  renderTodoList();
+  return true;
+}
+
+function updateTodo(id, completed) {
+  const todo = getTodos().find(item => item.id === id);
+  if (!todo) return;
+  todo.completed = Boolean(completed);
+  todo.completedAt = todo.completed ? Date.now() : 0;
+  saveState({ immediate: true, reason: todo.completed ? 'todo-completed' : 'todo-reopened' });
+  renderTodoList();
+}
+
+function deleteTodo(id) {
+  const previousLength = getTodos().length;
+  state.todos = getTodos().filter(todo => todo.id !== id);
+  if (state.todos.length === previousLength) return;
+  saveState({ immediate: true, reason: 'todo-deleted' });
+  renderTodoList();
+}
+
+function clearCompletedTodos() {
+  const remaining = getTodos().filter(todo => !todo.completed);
+  if (remaining.length === getTodos().length) return;
+  state.todos = remaining;
+  saveState({ immediate: true, reason: 'todos-cleared' });
+  renderTodoList();
+}
 
 function computeCurrentStreak(records = getRecords()) {
   if (!records.length) return 0;
@@ -1282,7 +1446,44 @@ function renderTimerOnly() {
   els.timer.textContent = fmt(state.remaining);
   const pct = 1 - (state.remaining / state.total);
   els.progressRing.style.strokeDashoffset = String(CIRC * (1 - pct));
+  positionComet(pct);
   document.title = `${fmt(state.remaining)} • ${modeName(state.currentMode)}`;
+}
+function updateTimerVisualState() {
+  const running = Boolean(state.running);
+  const isFocus = state.currentMode === 'focus';
+  document.body.dataset.timerRunning = running ? 'true' : 'false';
+  document.body.dataset.timerMode = state.currentMode;
+  els.timerPage.classList.toggle('is-running', running);
+  els.timerPage.classList.toggle('is-paused', !running && state.remaining < state.total);
+  els.heroTitle.textContent = running
+    ? (isFocus ? 'Focus mode' : 'Take a breather')
+    : (isFocus ? 'Study Grove' : 'Break ready');
+  if (els.focusContext) {
+    els.focusContext.textContent = running
+      ? (isFocus ? 'Protect this block of time.' : 'Reset your energy before the next round.')
+      : (state.pendingSession ? 'Capture what you finished while it is fresh.' : isFocus ? 'A clean block of time, just for you.' : 'A small pause makes the next round sharper.');
+  }
+  els.startPauseBtn.setAttribute('aria-label', running ? 'Pause timer' : 'Start timer');
+  els.startPauseBtn.title = running ? 'Pause timer (Space)' : 'Start timer (Space)';
+}
+function renderRoundTracker() {
+  if (!els.roundTracker) return;
+  const totalRounds = state.noBreakMode ? Math.max(4, Math.min(8, state.roundsBeforeLong)) : state.roundsBeforeLong;
+  const currentRound = Math.max(1, Number(state.cycleCount) || 1);
+  els.roundTracker.innerHTML = Array.from({ length: totalRounds }, (_, index) => {
+    const round = index + 1;
+    const completed = round < currentRound || (state.currentMode !== 'focus' && round === currentRound);
+    const current = round === currentRound && state.currentMode === 'focus';
+    return `<span class="round-dot${completed ? ' is-complete' : ''}${current ? ' is-current' : ''}" aria-label="Round ${round}${completed ? ', complete' : current ? ', current' : ''}"></span>`;
+  }).join('');
+}
+function playTimerStartFeedback() {
+  els.timerPage.classList.remove('timer-starting');
+  // Force a reflow so starting a new focus block always gets a fresh entrance.
+  void els.timerPage.offsetWidth;
+  els.timerPage.classList.add('timer-starting');
+  window.setTimeout(() => els.timerPage.classList.remove('timer-starting'), 900);
 }
 function updateTodaySummary() {
   const today = dkey(new Date());
@@ -1292,6 +1493,26 @@ function updateTodaySummary() {
   els.todayFocus.textContent = minutesToHuman(focus);
   els.todayQuestions.textContent = questions;
   els.todaySessions.textContent = recs.length;
+
+  const dailyGoal = Math.max(state.focus, state.focus * state.roundsBeforeLong);
+  const progress = Math.min(100, Math.round((focus / dailyGoal) * 100));
+  if (els.dailyProgressBar) els.dailyProgressBar.style.width = `${progress}%`;
+  if (els.dailyProgressLabel) els.dailyProgressLabel.textContent = `${minutesToHuman(focus)} focused today`;
+  if (els.dailyHeadline && els.dailySubline) {
+    if (!focus) {
+      els.dailyHeadline.textContent = 'One focused round can change the day.';
+      els.dailySubline.textContent = 'Start small. Let the next 25 minutes belong to you.';
+    } else if (focus < state.focus) {
+      els.dailyHeadline.textContent = 'You have started the thread.';
+      els.dailySubline.textContent = `${questions} question${questions === 1 ? '' : 's'} answered so far. Keep the rhythm going.`;
+    } else if (focus < dailyGoal / 2) {
+      els.dailyHeadline.textContent = 'Nice rhythm. Keep building.';
+      els.dailySubline.textContent = `${questions} question${questions === 1 ? '' : 's'} solved today. Your consistency is showing.`;
+    } else {
+      els.dailyHeadline.textContent = 'You are in a strong groove.';
+      els.dailySubline.textContent = `${questions} question${questions === 1 ? '' : 's'} solved. That is real progress.`;
+    }
+  }
 
   const { bySubject, questionsBySubject } = bucketStats(recs);
   els.todayBreakdown.innerHTML = SUBJECTS.map(s => `
@@ -1527,6 +1748,8 @@ function renderSessionLogButton() {
 }
 function render(options = {}) {
   const running = state.running;
+  updateTimerVisualState();
+  renderRoundTracker();
   els.timer.textContent = fmt(state.remaining);
   els.modeLabel.textContent = modeName(state.currentMode);
   els.sessionMini.textContent = state.currentMode === 'focus'
@@ -1542,7 +1765,8 @@ function render(options = {}) {
   );
   const pct = 1 - (state.remaining / state.total || 1);
   els.progressRing.style.strokeDashoffset = String(CIRC * (1 - clamp(pct, 0, 1)));
-  document.body.style.boxShadow = state.pulse ? 'inset 0 0 100px rgba(124,58,237,0.08)' : 'none';
+  positionComet(clamp(pct, 0, 1));
+  document.body.style.boxShadow = state.pulse ? 'inset 0 0 100px var(--focus-breath, rgba(92, 142, 94, .10))' : 'none';
 
   updateTodaySummary();
   // Re-derive daily achievements on every full render so a midnight rollover
@@ -1558,6 +1782,7 @@ function render(options = {}) {
   }
   else if (state.page === 'leaderboard') renderLeaderboard();
   updateProfileLabels();
+  renderTodoList();
   if (!options.skipSave) saveState();
 }
 function requestWakeLock() {
@@ -1835,6 +2060,8 @@ function startTimer() {
   clearInterval(interval);
   state.running = true;
   playSound('start');
+  updateTimerVisualState();
+  playTimerStartFeedback();
   timerPerfStamp = performance.now();
   saveTimerCheckpoint();
   els.statusPill.textContent = 'Locked in';
@@ -2837,6 +3064,11 @@ function updateProfileLabels() {
   const name = state.profile?.name || 'Guest';
   if (els.profileName) els.profileName.textContent = name;
   if (els.profilePageName) els.profilePageName.textContent = name;
+  if (els.brandGreeting) {
+    const hour = new Date().getHours();
+    const greeting = hour < 5 ? 'Late-night study' : hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : hour < 22 ? 'Good evening' : 'Good night';
+    els.brandGreeting.textContent = `${greeting}, ${name}`;
+  }
 }
 function openProfileModal() {
 
@@ -3008,6 +3240,7 @@ function handleImportFileChange(event) {
 function clearLocalData() {
   if (!confirm('Clear all local study data on this device?')) return;
   state.records = [];
+  state.todos = [];
   state.deletedRecordIds = {};
   state.streak = 0;
   state.lastDate = null;
@@ -3315,6 +3548,9 @@ function init() {
 document.querySelectorAll('.tab-pill-item[data-page]').forEach(btn => {
   btn.addEventListener('click', () => setPage(btn.dataset.page));
 });
+document.querySelectorAll('[data-open-page]').forEach(btn => {
+  btn.addEventListener('click', () => setPage(btn.dataset.openPage));
+});
 document.querySelectorAll('.other-tab[data-other-view]').forEach(btn => {
   btn.addEventListener('click', () => setOtherView(btn.dataset.otherView));
 });
@@ -3514,6 +3750,25 @@ if (els.settingsPage) {
   });
   if (els.settingsResetBtn) els.settingsResetBtn.addEventListener('click', resetSettingsToDefaults);
 }
+if (els.todoForm) {
+  els.todoForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (!addTodo(els.todoInput ? els.todoInput.value : '')) return;
+    if (els.todoInput) {
+      els.todoInput.value = '';
+      els.todoInput.focus();
+    }
+  });
+}
+document.querySelectorAll('[data-todo-filter]').forEach(button => {
+  button.addEventListener('click', () => {
+    todoFilter = ['open', 'all', 'done'].includes(button.dataset.todoFilter)
+      ? button.dataset.todoFilter
+      : 'open';
+    renderTodoList();
+  });
+});
+if (els.todoClearCompleted) els.todoClearCompleted.addEventListener('click', clearCompletedTodos);
 if (els.closeAnalyticsSessionBtn) els.closeAnalyticsSessionBtn.addEventListener('click', closeAnalyticsSessionModal);
 if (els.closeAnalyticsSessionFooterBtn) els.closeAnalyticsSessionFooterBtn.addEventListener('click', closeAnalyticsSessionModal);
 if (els.deleteAnalyticsSessionBtn) els.deleteAnalyticsSessionBtn.addEventListener('click', handleAnalyticsSessionDelete);
@@ -3524,7 +3779,7 @@ document.querySelectorAll('.theme-card[data-theme]').forEach(card => {
     if (t === state.theme) return;
     applyTheme(t);
     saveState({ immediate: true, reason: 'theme-changed' });
-    const names = { nebula: 'Nebula 🌌', ocean: 'Ocean 🌊', ember: 'Ember 🔥' };
+    const names = { nebula: 'Grove', ocean: 'Lagoon', ember: 'Hearth' };
     showToast(`Theme: ${names[t] || t}`);
   });
 });
@@ -3533,6 +3788,30 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (!els.sessionModal.classList.contains('hidden')) dismissSessionModal();
     if (els.analyticsSessionModal && !els.analyticsSessionModal.classList.contains('hidden')) closeAnalyticsSessionModal();
+  }
+  if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+  const target = e.target;
+  const isTyping = target instanceof HTMLElement && (
+    target.matches('input, textarea, select, [contenteditable="true"]')
+  );
+  if (isTyping || !els.sessionModal.classList.contains('hidden') ||
+      (els.analyticsSessionModal && !els.analyticsSessionModal.classList.contains('hidden')) ||
+      (els.profileModal && !els.profileModal.classList.contains('hidden'))) return;
+
+  if (e.code === 'Space') {
+    e.preventDefault();
+    if (state.page === 'timer' && !state.pendingSession) {
+      state.running ? pauseTimer() : startTimer();
+    }
+  } else if (e.key.toLowerCase() === 'r' && state.page === 'timer') {
+    e.preventDefault();
+    els.resetBtn.click();
+  } else if (e.key.toLowerCase() === 'l' && state.page === 'timer') {
+    e.preventDefault();
+    els.logBtn.click();
+  } else if (e.key.toLowerCase() === 's' && state.page === 'timer') {
+    e.preventDefault();
+    els.skipBtn.click();
   }
 });
 

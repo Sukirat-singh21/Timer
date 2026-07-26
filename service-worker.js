@@ -10,8 +10,19 @@
    the PWA fully usable offline while never showing stale code to a live user.
    ─────────────────────────────────────────────────────────── */
 
-const CACHE = 'jee-pomodoro-flow-v27-network-first';
-const ASSETS = ['./', 'index.html', 'style.css', 'app.js', 'firebase.js', 'manifest.json', 'icon-192.png', 'icon-512.png'];
+const CACHE = 'jee-pomodoro-flow-v29-network-first-textures';
+const ASSETS = [
+  './', 'index.html', 'style.css', 'app.js', 'firebase.js', 'manifest.json',
+  'icon-192.png', 'icon-512.png',
+  'assets/textures/grove.webp', 'assets/textures/grove.jpg',
+  'assets/textures/lagoon.webp', 'assets/textures/lagoon.jpg',
+  'assets/textures/hearth.webp', 'assets/textures/hearth.jpg',
+  'assets/previews/grove.webp', 'assets/previews/grove.jpg',
+  'assets/previews/lagoon.webp', 'assets/previews/lagoon.jpg',
+  'assets/previews/hearth.webp', 'assets/previews/hearth.jpg',
+  'assets/photos/study-desk-mobile.webp', 'assets/photos/study-desk-mobile.jpg',
+  'assets/photos/study-desk-desktop.webp', 'assets/photos/study-desk-desktop.jpg'
+];
 
 // Always bypass the cache for the service worker file itself so the browser
 // can perform a fresh byte-for-byte update check on every fetch.
