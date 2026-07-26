@@ -139,6 +139,9 @@ const els = {
   todoCount: $('todoCount'),
   todoHint: $('todoHint'),
   todoClearCompleted: $('todoClearCompleted'),
+  todoCollapseBtn: $('todoCollapseBtn'),
+  todoRestoreChip: $('todoRestoreChip'),
+  todoRestoreCount: $('todoRestoreCount'),
 };
 
 const defaultState = {
@@ -201,7 +204,10 @@ const defaultState = {
     enayat: false
   },
   achievementDay: '',
-  theme: 'nebula'
+  theme: 'nebula',
+  // Whether the focus queue is minimised on desktop. Persisted so the choice
+  // survives reloads; the toggle is only shown ≥760px (phones never see it).
+  todoCollapsed: false
 };
 
 let cloudLastAppliedAt = 0;
@@ -1111,6 +1117,7 @@ function normalizeState(nextState) {
   normalized.pendingSession = normalizePendingSession(normalized.pendingSession);
   normalized.timerCheckpoint = normalizeTimerCheckpoint(normalized.timerCheckpoint);
   normalized.theme = ['nebula', 'ocean', 'ember'].includes(normalized.theme) ? normalized.theme : 'nebula';
+  normalized.todoCollapsed = Boolean(normalized.todoCollapsed);
   return normalized;
 }
 
@@ -1293,6 +1300,27 @@ function renderTodoList() {
     button.classList.toggle('active', active);
     button.setAttribute('aria-selected', String(active));
   });
+  // Keep the collapsed-mode restore chip in sync so it always shows the live
+  // open count even while the panel itself is hidden.
+  if (els.todoRestoreCount) els.todoRestoreCount.textContent = `${openCount} open`;
+}
+
+/* Toggle the focus queue between expanded and minimised on desktop.
+   Minimising hides the panel, lets the active page expand to full shell
+   width, and reveals a floating chip that brings the panel back. The
+   preference is persisted so it survives reloads. No-op on phones — the
+   toggle and chip are CSS-hidden below 760px, so the body class is purely
+   cosmetic there and we don't flip the saved state from a phone. */
+function setTodoCollapsed(collapsed) {
+  state.todoCollapsed = Boolean(collapsed);
+  document.body.classList.toggle('todo-collapsed', state.todoCollapsed);
+  if (els.todoCollapseBtn) {
+    els.todoCollapseBtn.setAttribute('aria-expanded', String(!state.todoCollapsed));
+  }
+  if (els.todoRestoreChip) {
+    els.todoRestoreChip.setAttribute('aria-expanded', String(state.todoCollapsed));
+  }
+  saveState({ skipCloud: true, reason: 'todo-collapse-toggled' });
 }
 
 function addTodo(text) {
@@ -3456,6 +3484,12 @@ function init() {
   currentAnalyticsDetail = null;
   closeSessionModal();
   applyTheme(state.theme);
+  // Restore the desktop focus-queue minimise state before the first render so
+  // the layout lands in the right shape immediately (no flash of the expanded
+  // panel before it collapses, or vice versa).
+  document.body.classList.toggle('todo-collapsed', Boolean(state.todoCollapsed));
+  if (els.todoCollapseBtn) els.todoCollapseBtn.setAttribute('aria-expanded', String(!state.todoCollapsed));
+  if (els.todoRestoreChip) els.todoRestoreChip.setAttribute('aria-expanded', String(Boolean(state.todoCollapsed)));
   updateProfileLabels();
   ensureProfile();
 
@@ -3769,6 +3803,12 @@ document.querySelectorAll('[data-todo-filter]').forEach(button => {
   });
 });
 if (els.todoClearCompleted) els.todoClearCompleted.addEventListener('click', clearCompletedTodos);
+if (els.todoCollapseBtn) {
+  els.todoCollapseBtn.addEventListener('click', () => setTodoCollapsed(true));
+}
+if (els.todoRestoreChip) {
+  els.todoRestoreChip.addEventListener('click', () => setTodoCollapsed(false));
+}
 if (els.closeAnalyticsSessionBtn) els.closeAnalyticsSessionBtn.addEventListener('click', closeAnalyticsSessionModal);
 if (els.closeAnalyticsSessionFooterBtn) els.closeAnalyticsSessionFooterBtn.addEventListener('click', closeAnalyticsSessionModal);
 if (els.deleteAnalyticsSessionBtn) els.deleteAnalyticsSessionBtn.addEventListener('click', handleAnalyticsSessionDelete);
@@ -3812,6 +3852,14 @@ document.addEventListener('keydown', (e) => {
   } else if (e.key.toLowerCase() === 's' && state.page === 'timer') {
     e.preventDefault();
     els.skipBtn.click();
+  } else if (e.key.toLowerCase() === 'q') {
+    // Toggle the focus queue between minimised and expanded. Works on any page
+    // on desktop; the collapse UI is hidden on phones, so the saved state only
+    // flips where the toggle is actually visible (≥760px).
+    if (window.matchMedia('(min-width: 760px)').matches) {
+      e.preventDefault();
+      setTodoCollapsed(!state.todoCollapsed);
+    }
   }
 });
 

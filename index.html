@@ -487,9 +487,15 @@
             <h2 id="todoTitle">Study tasks</h2>
             <p>Keep the next useful action close while you work.</p>
           </div>
-          <span class="todo-count" id="todoCount">0 open</span>
+          <div class="todo-heading-actions">
+            <span class="todo-count" id="todoCount">0 open</span>
+            <button class="todo-collapse-btn" id="todoCollapseBtn" type="button" aria-label="Minimise focus queue" aria-expanded="true" title="Minimise focus queue">
+              <span aria-hidden="true">▾</span>
+            </button>
+          </div>
         </div>
 
+        <div class="todo-panel-body" id="todoPanelBody">
         <form class="todo-form" id="todoForm">
           <label class="sr-only" for="todoInput">Add a study task</label>
           <input id="todoInput" type="text" maxlength="120" autocomplete="off" placeholder="Add a task…" />
@@ -509,7 +515,16 @@
           <span id="todoHint">Short, specific tasks are easier to start.</span>
           <button class="todo-clear-btn" id="todoClearCompleted" type="button">Clear done</button>
         </div>
+        </div>
       </aside>
+
+      <!-- Restore chip lives OUTSIDE the panel so it stays clickable when the
+           panel is minimised. It is revealed via body.todo-collapsed. -->
+      <button class="todo-restore-chip" id="todoRestoreChip" type="button" aria-expanded="false" aria-label="Open focus queue" title="Open focus queue (Q)">
+        <span aria-hidden="true">📋</span>
+        <span class="todo-restore-label">Focus queue</span>
+        <span class="todo-restore-count" id="todoRestoreCount">0 open</span>
+      </button>
 
     </main>
   </div>
