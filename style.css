@@ -1706,6 +1706,8 @@ body.modal-open {
   box-shadow: 0 32px 96px rgba(0,0,0,.65), inset 0 1px 0 rgba(255,255,255,.05);
   padding: 20px;
   animation: modalPop .3s cubic-bezier(.2,.8,.2,1) both;
+  will-change: transform;
+  transform: translateZ(0);
 }
 
 .modal-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
