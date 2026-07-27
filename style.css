@@ -1706,8 +1706,6 @@ body.modal-open {
   box-shadow: 0 32px 96px rgba(0,0,0,.65), inset 0 1px 0 rgba(255,255,255,.05);
   padding: 20px;
   animation: modalPop .3s cubic-bezier(.2,.8,.2,1) both;
-  will-change: transform;
-  transform: translateZ(0);
 }
 
 .modal-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
@@ -1833,8 +1831,15 @@ body.modal-open {
 
 
 @keyframes modalPop{
-  from { opacity: 0; transform: scale(.95) translateY(8px); }
-  to   { opacity: 1; transform: scale(1) translateY(0); }
+  /* Opacity-only on purpose. Animating transform: scale() promotes
+     .modal-card to a composited layer, and the resulting rasterization
+     of border-radius against the dark backdrop leaves a visible seam/
+     gradient line at the bottom edge when the card is scrolled. Keeping
+     the entrance as a pure fade avoids the layer promotion entirely, and
+     the drop shadow + border-radius continue to clip scroll content
+     cleanly without needing clip-path (which would clip the shadow). */
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 @keyframes toastIn{
@@ -4897,11 +4902,13 @@ body::before {
 .topbar.scrolled::before { opacity: 0 !important; }
 .topbar.scrolled:hover,
 .topbar.scrolled:focus-within {
-  background: transparent !important;
-  border-color: transparent !important;
-  box-shadow: none !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
+  /* Bring back just enough backdrop so the heading is readable on hover,
+     but keep it lighter than the resting state so it still feels transparent. */
+  background: rgba(11, 23, 17, .72) !important;
+  border-color: rgba(255,255,255,.06) !important;
+  box-shadow: 0 8px 18px rgba(0,0,0,.22) !important;
+  backdrop-filter: blur(10px) saturate(1.05);
+  -webkit-backdrop-filter: blur(10px) saturate(1.05);
 }
 
 .card,
@@ -5606,7 +5613,7 @@ body.theme-ember .topbar { background: rgba(26, 18, 12, .84) !important; }
 }
 .topbar.scrolled .brand,
 .topbar.scrolled .brand-title,
-.topbar.scrolled .brand-subtitle { opacity: .18; }
+.topbar.scrolled .brand-subtitle { opacity: .08; }
 
 .card,
 .hero,
@@ -6918,8 +6925,10 @@ body.todo-collapsed .todo-collapse-btn span { transform: rotate(180deg); }
 .todo-panel-body { display: grid; gap: 14px; min-width: 0; }
 
 @media (max-width: 759px) {
-  /* On phones the panel is timer-only and short; the minimise toggle and
-     floating restore chip add clutter without saving real space, so hide both. */
+  /* On phones the panel is timer-only and short; the minimise toggle,
+     heading-actions wrapper, and floating restore chip add clutter without
+     saving real space, so hide the entire collapse UI. */
+  .todo-heading-actions { display: none !important; }
   .todo-collapse-btn,
   .todo-restore-chip { display: none !important; }
 }
@@ -7252,4 +7261,28 @@ body[class] .topbar {
     linear-gradient(135deg, #1a120c, #4b2b18 55%, #edbd6f);
   background-size: cover, cover;
   background-blend-mode: overlay, normal;
+}
+
+/* ────────────────────────────────────────────────────────────────
+   Scrolled topbar: must read fully transparent on every theme.
+   This is intentionally the LAST rule in the cascade so it wins the
+   fight against the !important backgrounds above (the shared
+   `.topbar`, `body.theme-ocean .topbar`, and `body[class] .topbar`
+   blocks). The key gotcha: `.topbar.scrolled { background: transparent }`
+   only clears background-COLOR. The living-grove topbar also paints a
+   background-IMAGE (texture + gradient), so we must reset BOTH color
+   and image — otherwise the grain/gradient lingers and the "JEE
+   Pomodoro Flow" heading area stays opaque on scroll under the
+   grove / lagoon / ember themes.
+   ──────────────────────────────────────────────────────────────── */
+.topbar.scrolled,
+body.theme-ocean .topbar.scrolled,
+body.theme-ember .topbar.scrolled,
+body[class] .topbar.scrolled {
+  background-color: transparent !important;
+  background-image: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }

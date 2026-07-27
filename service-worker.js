@@ -10,7 +10,7 @@
    the PWA fully usable offline while never showing stale code to a live user.
    ─────────────────────────────────────────────────────────── */
 
-const CACHE = 'jee-pomodoro-flow-v29-network-first-textures';
+const CACHE = 'jee-pomodoro-flow-v30-network-first-textures';
 const ASSETS = [
   './', 'index.html', 'style.css', 'app.js', 'firebase.js', 'manifest.json',
   'icon-192.png', 'icon-512.png',
